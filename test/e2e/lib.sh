@@ -73,8 +73,15 @@ delete_cluster() {
 install_gateway_api() {
   log "installing the Gateway API CRDs ($(basename "$(dirname "$GATEWAY_API_CRDS")"), standard)"
   quiet "$KUBECTL" apply --server-side -f "$GATEWAY_API_CRDS"
-  quiet "$KUBECTL" wait --for=condition=Established crd -l gateway.networking.k8s.io/bundle-version --timeout=60s
-  info "Gateway API CRDs established"
+  # The file also holds a ValidatingAdmissionPolicy and its binding, which have no Established
+  # condition, so wait on the CRDs it defines by name. (bundle-version is an annotation, not a
+  # label, so it can't be used as a selector.)
+  local crds
+  crds=$("$KUBECTL" get -f "$GATEWAY_API_CRDS" -o name | grep '^customresourcedefinition')
+  [[ -n $crds ]] || die "no CRDs found in $GATEWAY_API_CRDS"
+  # shellcheck disable=SC2086 # one name per word
+  quiet "$KUBECTL" wait --for=condition=Established $crds --timeout=60s
+  info "Gateway API CRDs established ($(wc -w <<<"$crds") CRDs)"
 }
 
 # Istio ambient: istiod and ztunnel in istio-system, istio-cni in kube-system. platform=k3d
