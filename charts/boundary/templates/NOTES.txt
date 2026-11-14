@@ -1,0 +1,19 @@
+{{- $model := include "boundary.model" . | fromJson -}}
+boundary {{ .Chart.Version }} (mesh: {{ $model.mesh }}, ingress: {{ $model.implementation }})
+
+Mesh-wide, in {{ $model.rootNamespace }}:
+{{- if $model.mtls.name }}
+  mTLS:          {{ $model.mtls.mode }} (PeerAuthentication {{ $model.mtls.name }})
+{{- else }}
+  mTLS:          inherit (no PeerAuthentication; the mesh's own default applies)
+{{- end }}
+{{- if $model.meshDefaultDeny }}
+  default deny:  on (AuthorizationPolicy deny-all): requests need an ALLOW policy
+{{- else }}
+  default deny:  off
+{{- end }}
+
+Prerequisites this chart never installs:
+  - the Gateway API CRDs, {{ index .Chart.Annotations "boundary.posture.dev/gateway-api-version" }} or later, {{ index .Chart.Annotations "boundary.posture.dev/gateway-api-channel" }} channel
+  - the mesh ({{ $model.mesh }}), installed and healthy
+  - namespaces {{ $model.ingress.namespace }} and {{ $model.egress.namespace }}, enrolled in the mesh, each with its posture release

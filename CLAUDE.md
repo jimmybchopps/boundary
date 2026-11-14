@@ -10,7 +10,7 @@ The first phases support **Istio in ambient mode**. Then Envoy Gateway (the ingr
 and for clusters with no mesh), Linkerd, and Cilium, each followed by an integration phase.
 Multi-cluster is out of scope for now.
 
-The build order is in `docs/PLAN.md`. Work through it phase by phase.
+The build order is in `PLAN.md`. Work through it phase by phase.
 
 ## Prerequisites (never installed by this chart)
 
@@ -258,21 +258,32 @@ charts/boundary/
                         egress authorization, mesh-wide, telemetry
     envoy-gateway/      phase 5
     linkerd/  cilium/   phases 5 and 7
+    validate.yaml       builds the model on every render, so invalid values always fail
     NOTES.txt
-  tests/                helm-unittest suites
-examples/               values files that double as e2e fixtures
-test/e2e/               k3d scripts per phase
-docs/PLAN.md
+  tests/                helm-unittest suites, one subfolder per output (tests/istio/)
+examples/               values files that double as fixtures (lint, kubeconform, snapshots, e2e)
+test/model-probe/       test-only chart rendering the model as YAML for unit tests
+test/e2e/               k3d harness: run.sh, lib.sh, scenarios/<name>.sh
+Makefile                pinned tool versions and every test target
+PLAN.md
 ```
 
 ## Testing
 
-    helm lint --strict charts/boundary
-    helm unittest charts/boundary
-    helm template t charts/boundary -f examples/<x>.yaml | kubeconform -strict \
-      -schema-location default \
-      -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
-    test/e2e/run.sh <phase>
+The harness is the one used by `posture`: pinned tools in `.bin/`, nothing installed globally.
+
+    make tools            helm, helm-unittest, kubeconform (pinned in the Makefile)
+    make test             lint (chart and every example), unittest (chart and model probe),
+                          validate (kubeconform with the CRDs-catalog for Istio and Gateway API)
+    make test-all-helm    make test under Helm 3.14, the latest 3.x, and 4
+    make unittest-update  regenerate the example snapshots (review the diff)
+    make e2e MESH=istio [E2E_ARGS=<scenario>] [E2E_KEEP=1] [E2E_REUSE=1]   needs Docker
+
+Unit tests: one `failedTemplate` case per render failure, matching `boundary: <path>: ...`;
+normalization is asserted on the model through `test/model-probe`. e2e scenarios define
+`setup`, `checks` (`expect allow|deny <ns>/<workload> <host>:<port>`), `install`, and
+optionally `extra` and `teardown`; every check first runs before the chart is installed and must
+connect, so a deny can't pass for the wrong reason.
 
 The e2e cluster is k3d with the Gateway API CRDs (v1.6, standard), then Istio ambient
 (`platform=k3d`), then `posture` in the two gateway namespaces, then this chart. Every behavior
@@ -282,7 +293,7 @@ needs an e2e case that shows the allowed path works and the refused path is refu
 
 | Phase | Area | Status |
 |---|---|---|
-| 1 | Skeleton, model, mesh-wide settings | not started |
+| 1 | Skeleton, model, mesh-wide settings | in progress: static suite passes; e2e and CI not yet run |
 | 2 | Istio ingress gateways and TLS settings | not started |
 | 3 | Istio egress gateways | not started |
 | 4 | Integration with `posture` and `policy` (Istio) | not started |

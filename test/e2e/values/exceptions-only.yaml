@@ -1,0 +1,5 @@
+# posture in a gateway namespace (ingress-gateway, egress-gateway), rendering only an empty
+# posture-exceptions: no NetworkPolicies, mesh none. Stands in for the istio-ingress and
+# istio-egress profiles until this harness runs under the policy chart (phase 4).
+mesh: none
+networkPolicy: { ingress: false, egress: false }

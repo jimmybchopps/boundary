@@ -1,0 +1,17 @@
+{{- /*
+meshDefaultDeny: an allow-nothing AuthorizationPolicy (empty spec) in Istio's root namespace,
+so every workload in the mesh refuses requests no ALLOW policy admits.
+*/ -}}
+{{- $model := include "boundary.model" . | fromJson -}}
+{{- if and (eq $model.mesh "istio") $model.meshDefaultDeny }}
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-all
+  namespace: {{ $model.rootNamespace }}
+  labels:
+    {{- include "boundary.labels" . | nindent 4 }}
+  annotations:
+    {{- include "boundary.annotations" "meshDefaultDeny" | nindent 4 }}
+spec: {}
+{{- end }}

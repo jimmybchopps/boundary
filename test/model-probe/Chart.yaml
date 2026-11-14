@@ -1,0 +1,11 @@
+apiVersion: v2
+name: model-probe
+description: >-
+  Test-only chart: renders boundary's internal model as YAML so helm-unittest can assert on it
+  directly. Values for boundary go under the `boundary` key. Never published.
+type: application
+version: 0.0.0
+dependencies:
+  - name: boundary
+    version: 0.1.0
+    repository: file://../../charts/boundary

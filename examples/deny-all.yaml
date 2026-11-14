@@ -1,0 +1,15 @@
+# Mesh-wide STRICT mTLS and default deny: every workload in the mesh refuses requests unless an
+# ALLOW policy (each namespace's posture) admits them.
+mesh: istio
+mtls:
+  mode: STRICT
+meshDefaultDeny: true
+ingress:
+  gateways:
+    https:
+      listeners:
+        https:
+          hostname: "*.apps.example.mil"
+          certificates: [apps-tls]
+        http:
+          hostname: "*.apps.example.mil"

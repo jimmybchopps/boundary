@@ -1,0 +1,72 @@
+suite: model allowedHosts
+templates:
+  - templates/model.yaml
+set:
+  boundary.egress.gateways:
+    default:
+      allowedHosts:
+        os-updates:
+          hosts: ["*.ubuntu.com"]
+          ports: [80]
+          protocol: HTTP
+        github:
+          hosts: [api.github.com, github.com]
+          ports: [443]
+        package-mirror:
+          addresses: [203.0.113.10/32]
+          ports: [443, 8443]
+          protocol: TCP
+        legacy-ftp:
+          enabled: false
+          addresses: [198.51.100.7/32]
+          ports: [21]
+          protocol: TCP
+    partner:
+      default: false
+      allowedHosts:
+        partner-api:
+          hosts: [api.partner.example.com]
+          ports: [443]
+tests:
+  - it: enabled entries only, sorted by name
+    documentSelector: { path: path, value: egress.gateways.default }
+    asserts:
+      - equal: { path: allowedHosts, value: [github, os-updates, package-mirror] }
+
+  - it: protocol defaults to TLS, and the egress limit is named after gateway and entry
+    documentSelector: { path: path, value: egress.gateways.default.allowedHosts.github }
+    asserts:
+      - equal: { path: kind, value: AllowedHost }
+      - equal: { path: name, value: github }
+      - equal: { path: policyName, value: allow-egress-via-default-to-github }
+      - equal: { path: hosts, value: [api.github.com, github.com] }
+      - notExists: { path: addresses }
+      - equal: { path: ports, value: [443] }
+      - equal: { path: protocol, value: TLS }
+
+  - it: an HTTP entry by host
+    documentSelector: { path: path, value: egress.gateways.default.allowedHosts.os-updates }
+    asserts:
+      - equal: { path: hosts, value: ["*.ubuntu.com"] }
+      - equal: { path: protocol, value: HTTP }
+
+  - it: a TCP entry by address
+    documentSelector: { path: path, value: egress.gateways.default.allowedHosts.package-mirror }
+    asserts:
+      - equal: { path: addresses, value: [203.0.113.10/32] }
+      - notExists: { path: hosts }
+      - equal: { path: ports, value: [443, 8443] }
+      - equal: { path: protocol, value: TCP }
+
+  - it: entries belong to their own gateway
+    documentSelector: { path: path, value: egress.gateways.partner.allowedHosts.partner-api }
+    asserts:
+      - equal: { path: policyName, value: allow-egress-via-partner-to-partner-api }
+
+  - it: a disabled gateway drops its entries
+    set:
+      boundary.egress.gateways.partner.enabled: false
+    asserts:
+      - hasDocuments: { count: 6 }
+      - equal: { path: egress.gateways, value: [default] }
+        documentSelector: { path: path, value: model }

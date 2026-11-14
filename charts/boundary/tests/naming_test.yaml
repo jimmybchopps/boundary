@@ -1,0 +1,23 @@
+suite: object names
+templates:
+  - templates/validate.yaml
+tests:
+  - it: an egress limit's name may be up to 253 characters
+    set:
+      egress.gateways.default.allowedHosts:
+        # allow-egress-via-default-to- (28) + 225 = 253
+        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:
+          hosts: [api.github.com]
+          ports: [443]
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: a longer one fails, naming the entry
+    set:
+      egress.gateways.default.allowedHosts:
+        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:
+          hosts: [api.github.com]
+          ports: [443]
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: egress\.gateways\.default\.allowedHosts\.a+: object name "allow-egress-via-default-to-a+" is 254 characters; the limit is 253'

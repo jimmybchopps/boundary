@@ -1,0 +1,82 @@
+deny-all:
+  1: |
+    apiVersion: security.istio.io/v1
+    kind: AuthorizationPolicy
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: meshDefaultDeny
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: deny-all
+      namespace: istio-system
+    spec: {}
+  2: |
+    apiVersion: security.istio.io/v1
+    kind: PeerAuthentication
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: mtls.mode
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: mtls-strict
+      namespace: istio-system
+    spec:
+      mtls:
+        mode: STRICT
+full:
+  1: |
+    apiVersion: security.istio.io/v1
+    kind: PeerAuthentication
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: mtls.mode
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: mtls-strict
+      namespace: istio-system
+    spec:
+      mtls:
+        mode: STRICT
+minimal:
+  1: |
+    apiVersion: security.istio.io/v1
+    kind: PeerAuthentication
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: mtls.mode
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: mtls-strict
+      namespace: istio-system
+    spec:
+      mtls:
+        mode: STRICT
+permissive:
+  1: |
+    apiVersion: security.istio.io/v1
+    kind: PeerAuthentication
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: mtls.mode
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: mtls-permissive
+      namespace: istio-system
+    spec:
+      mtls:
+        mode: PERMISSIVE

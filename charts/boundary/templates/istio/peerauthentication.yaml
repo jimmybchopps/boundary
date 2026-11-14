@@ -1,0 +1,19 @@
+{{- /*
+Mesh-wide mTLS (mtls.mode): one PeerAuthentication in Istio's root namespace, mtls-strict or
+mtls-permissive. mtls.mode inherit renders nothing.
+*/ -}}
+{{- $model := include "boundary.model" . | fromJson -}}
+{{- if and (eq $model.mesh "istio") $model.mtls.name }}
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: {{ $model.mtls.name }}
+  namespace: {{ $model.rootNamespace }}
+  labels:
+    {{- include "boundary.labels" . | nindent 4 }}
+  annotations:
+    {{- include "boundary.annotations" "mtls.mode" | nindent 4 }}
+spec:
+  mtls:
+    mode: {{ $model.mtls.mode }}
+{{- end }}

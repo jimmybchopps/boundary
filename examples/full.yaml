@@ -1,0 +1,84 @@
+# Every gateway in use: https with a TLS 1.3 listener for an internal hostname, TLS
+# passthrough, a TCP listener for one database namespace, and two egress gateways (the default
+# one, and one pinned to exit nodes for a partner network). Settings for later phases are
+# checked now and rendered once their phase lands.
+mesh: istio
+istio:
+  rootNamespace: istio-system
+mtls:
+  mode: STRICT
+meshDefaultDeny: false
+accessLogs:
+  enabled: true
+tls:
+  minVersion: TLSv1_2
+  maxVersion: TLSv1_3
+  cipherSuites:
+    - ECDHE-ECDSA-AES256-GCM-SHA384
+    - ECDHE-RSA-AES256-GCM-SHA384
+ingress:
+  namespace: ingress-gateway
+  gateways:
+    https:
+      service:
+        annotations:
+          service.beta.kubernetes.io/aws-load-balancer-scheme: internal
+      listeners:
+        https:
+          hostname: "*.apps.example.mil"
+          certificates: [apps-tls]
+        internal:
+          port: 443
+          protocol: HTTPS
+          hostname: "*.internal.example.mil"
+          certificates: [internal-tls]
+          tls: { minVersion: TLSv1_3 }
+        http:
+          hostname: "*.apps.example.mil"
+      infrastructure:
+        replicas: 3
+        autoscaling: { enabled: true, maxReplicas: 6 }
+        resources:
+          requests: { cpu: 200m, memory: 256Mi }
+    tls-passthrough:
+      enabled: true
+      listeners:
+        tls:
+          hostname: "*.passthrough.example.mil"
+    tcp:
+      enabled: true
+      listeners:
+        postgres:
+          port: 5432
+          protocol: TCP
+          namespace: databases
+egress:
+  namespace: egress-gateway
+  gateways:
+    default:
+      allowedHosts:
+        github:
+          hosts: [api.github.com, github.com]
+          ports: [443]
+          protocol: TLS
+        os-updates:
+          hosts: ["*.ubuntu.com"]
+          ports: [80]
+          protocol: HTTP
+        package-mirror:
+          addresses: [203.0.113.10/32]
+          ports: [443]
+          protocol: TCP
+        legacy-ftp:
+          enabled: false
+          addresses: [198.51.100.7/32]
+          ports: [21]
+          protocol: TCP
+    partner:
+      default: false
+      exitNodes:
+        node.example.mil/exit: "true"
+      allowedHosts:
+        partner-api:
+          hosts: [api.partner.example.com]
+          ports: [443]
