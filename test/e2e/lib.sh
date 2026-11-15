@@ -476,10 +476,18 @@ gateway_pods() {
     -o jsonpath='{range .items[*]}{.metadata.uid} {.status.containerStatuses[0].restartCount}{"\n"}{end}' | sort
 }
 
-# gateway_logs_have <gateway> <text>: the gateway's pods logged a line containing text.
+# gateway_logs_have <gateway> <text>: one of the gateway's pods logged a line containing text.
+# Reads each pod's whole log by name: with a selector (-l), kubectl logs shows only the last 10
+# lines per pod, even with --tail=-1. And no pipe into grep -q, which under pipefail can fail
+# with SIGPIPE after a match.
 gateway_logs_have() {
-  "$KUBECTL" -n "$INGRESS_NAMESPACE" logs -l "gateway.networking.k8s.io/gateway-name=$1" \
-    -c istio-proxy --tail=-1 2>/dev/null | grep -qF -- "$2"
+  local pod logs
+  for pod in $("$KUBECTL" -n "$INGRESS_NAMESPACE" get pods \
+    -l "gateway.networking.k8s.io/gateway-name=$1" -o name 2>/dev/null); do
+    logs=$("$KUBECTL" -n "$INGRESS_NAMESPACE" logs "$pod" -c istio-proxy 2>/dev/null) || continue
+    [[ $logs == *"$2"* ]] && return 0
+  done
+  return 1
 }
 
 # restart_workloads: replaces every pod in the scenario's namespaces and waits until only the
@@ -645,6 +653,11 @@ dump_state() {
   "$KUBECTL" -n "$INGRESS_NAMESPACE" get gateways \
     -o jsonpath='{range .items[*]}{.metadata.name}: {range .status.conditions[*]}{.type}={.status}({.reason}) {end}| listeners: {range .status.listeners[*]}{.name}={.attachedRoutes} {end}{"\n"}{end}' 2>&1 || true
   "$KUBECTL" -n "$INGRESS_NAMESPACE" get events --sort-by=.lastTimestamp 2>&1 | tail -n 15 || true
+  local pod
+  for pod in $("$KUBECTL" -n "$INGRESS_NAMESPACE" get pods -l gateway.networking.k8s.io/gateway-name -o name 2>/dev/null); do
+    printf '\n--- %s (istio-proxy, last 10 lines)\n' "$pod"
+    "$KUBECTL" -n "$INGRESS_NAMESPACE" logs "$pod" -c istio-proxy --tail=10 2>&1 || true
+  done
   printf '\n--- routes\n'
   "$KUBECTL" get httproutes,tlsroutes,tcproutes -A \
     -o jsonpath='{range .items[*]}{.kind} {.metadata.namespace}/{.metadata.name}: {range .status.parents[*].conditions[*]}{.type}={.status}({.reason}) {end}{"\n"}{end}' 2>&1 || true
