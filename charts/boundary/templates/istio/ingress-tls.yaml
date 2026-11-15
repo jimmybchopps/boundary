@@ -1,0 +1,59 @@
+{{- /*
+TLS settings (tls, and each HTTPS listener's tls override): one EnvoyFilter per gateway with
+HTTPS listeners, tls-<gateway>, in the gateway's namespace. Istio has no Gateway API field for
+TLS versions or ciphers, so each terminating listener's filter chain gets a MERGE patch of its
+DownstreamTlsContext's tls_params, matched by port, and by SNI when several HTTPS listeners
+share the port. EnvoyFilter patches Envoy internals: a new Istio version is supported only once
+the e2e confirms the negotiated versions and that certificates still load.
+*/ -}}
+{{- $model := include "boundary.model" . | fromJson -}}
+{{- if eq $model.implementation "istio" }}
+{{- range $gateway := $model.ingress.gateways }}
+{{- if $gateway.tlsPatches }}
+{{- $paths := list "tls" }}
+{{- range $gateway.tlsPatches }}{{ if .override }}{{ $paths = append $paths (printf "%s.tls" .path) }}{{ end }}{{ end }}
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: {{ $gateway.tlsName }}
+  namespace: {{ $model.ingress.namespace }}
+  labels:
+    {{- include "boundary.labels" $ | nindent 4 }}
+  annotations:
+    {{- include "boundary.annotations" (join ", " $paths) | nindent 4 }}
+spec:
+  workloadSelector:
+    labels:
+      gateway.networking.k8s.io/gateway-name: {{ $gateway.name }}
+  configPatches:
+    {{- range $patch := $gateway.tlsPatches }}
+    # {{ $patch.path }}
+    - applyTo: FILTER_CHAIN
+      match:
+        context: GATEWAY
+        listener:
+          portNumber: {{ int $patch.port }}
+          {{- with $patch.sni }}
+          filterChain:
+            sni: {{ . | quote }}
+          {{- end }}
+      patch:
+        operation: MERGE
+        value:
+          transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              common_tls_context:
+                tls_params:
+                  tls_minimum_protocol_version: {{ $patch.tls.minVersion }}
+                  tls_maximum_protocol_version: {{ $patch.tls.maxVersion }}
+                  {{- with $patch.tls.cipherSuites }}
+                  cipher_suites:
+                    {{- toYaml . | nindent 20 }}
+                  {{- end }}
+    {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

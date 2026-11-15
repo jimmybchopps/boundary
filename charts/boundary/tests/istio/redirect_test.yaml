@@ -1,0 +1,43 @@
+suite: HTTP to HTTPS redirect (redirectToHTTPS)
+templates:
+  - templates/istio/ingress-redirect.yaml
+tests:
+  - it: the default http listener redirects to 443
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: HTTPRoute }
+      - equal: { path: metadata.name, value: redirect-http-to-https-https }
+      - equal: { path: metadata.namespace, value: ingress-gateway }
+      - equal: { path: metadata.annotations, value: { boundary.posture.dev/rule: ingress.gateways.https.listeners.http.redirectToHTTPS } }
+      - equal:
+          path: spec
+          value:
+            parentRefs:
+              - { group: gateway.networking.k8s.io, kind: Gateway, name: https, sectionName: http }
+            rules:
+              - filters:
+                  - type: RequestRedirect
+                    requestRedirect: { scheme: https, statusCode: 301 }
+
+  - it: redirects to the gateway's HTTPS port when it isn't 443
+    set:
+      ingress.gateways.https.listeners.https.port: 8443
+    asserts:
+      - equal: { path: "spec.rules[0].filters[0].requestRedirect", value: { scheme: https, statusCode: 301, port: 8443 } }
+
+  - it: attaches to every redirecting HTTP listener
+    set:
+      ingress.gateways.https.listeners.http.hostname: a.example.mil
+      ingress.gateways.https.listeners.http-b: { port: 80, protocol: HTTP, hostname: b.example.mil, redirectToHTTPS: true }
+    asserts:
+      - lengthEqual: { path: spec.parentRefs, count: 2 }
+      - equal:
+          path: metadata.annotations
+          value:
+            boundary.posture.dev/rule: ingress.gateways.https.listeners.http.redirectToHTTPS, ingress.gateways.https.listeners.http-b.redirectToHTTPS
+
+  - it: nothing without redirectToHTTPS
+    set:
+      ingress.gateways.https.listeners.http.redirectToHTTPS: false
+    asserts:
+      - hasDocuments: { count: 0 }

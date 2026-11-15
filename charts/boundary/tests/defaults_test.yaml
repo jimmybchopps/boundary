@@ -6,7 +6,7 @@ release:
   name: boundary
   namespace: istio-system
 tests:
-  - it: renders only the mesh-wide mtls-strict PeerAuthentication
+  - it: renders mtls-strict and the https gateway with its objects
     asserts:
       - hasDocuments: { count: 1 }
         template: templates/istio/peerauthentication.yaml
@@ -14,6 +14,18 @@ tests:
         template: templates/istio/deny-all.yaml
       - hasDocuments: { count: 0 }
         template: templates/validate.yaml
+      - hasDocuments: { count: 1 }
+        template: templates/istio/ingress-gateway.yaml
+      - equal: { path: metadata.name, value: https }
+        template: templates/istio/ingress-gateway.yaml
+      - hasDocuments: { count: 1 }
+        template: templates/istio/ingress-infrastructure.yaml
+      - hasDocuments: { count: 1 }
+        template: templates/istio/ingress-redirect.yaml
+      - hasDocuments: { count: 1 }
+        template: templates/istio/ingress-tls.yaml
+      - hasDocuments: { count: 1 }
+        template: templates/istio/telemetry.yaml
 
   - it: the PeerAuthentication carries the labels and the rule annotation
     template: templates/istio/peerauthentication.yaml

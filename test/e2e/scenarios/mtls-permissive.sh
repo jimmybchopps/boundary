@@ -6,7 +6,7 @@
 source "${HERE}/scenarios/_mtls.sh"
 
 install() {
-  install_boundary permissive.yaml
+  install_boundary permissive.yaml -f "$HERE/values/no-ingress.yaml"
 }
 
 checks() {

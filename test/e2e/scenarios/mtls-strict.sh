@@ -5,7 +5,7 @@
 source "${HERE}/scenarios/_mtls.sh"
 
 install() {
-  install_boundary minimal.yaml
+  install_boundary minimal.yaml -f "$HERE/values/no-ingress.yaml"
 }
 
 checks() {

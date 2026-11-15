@@ -1,0 +1,5 @@
+# No ingress gateways: for the scenarios that test only mesh-wide settings.
+ingress:
+  gateways:
+    https:
+      enabled: false

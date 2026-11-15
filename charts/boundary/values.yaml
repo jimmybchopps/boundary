@@ -36,30 +36,37 @@ ingress:
   #    live here too. Shared convention with posture.
   namespace: ingress-gateway
 
-  # -- Ingress gateways, keyed by name; each becomes its own Gateway with its own Service and
-  #    address. Each takes:
+  # -- Ingress gateways, keyed by name; each becomes its own Gateway (gatewayClassName istio)
+  #    with its own Service and address. Each takes:
   #      enabled:         default true.
-  #      service:         the generated Service: type (default LoadBalancer), annotations,
-  #                       loadBalancerIP.
+  #      service:         the generated Service: type (LoadBalancer, the default; NodePort;
+  #                       ClusterIP), annotations (on the Service only), loadBalancerIP (the
+  #                       Gateway's address; type LoadBalancer only).
   #      listeners:       keyed by name. Each takes enabled, port (required), protocol
   #                       (required: HTTPS, HTTP, TLS, or TCP), and by protocol:
   #                         HTTPS:  certificates (required: Secret names in the ingress
-  #                                 namespace), hostname, tls (overrides the chart-wide tls).
+  #                                 namespace), hostname, tls (overrides the chart-wide tls,
+  #                                 key by key).
   #                         HTTP:   hostname, redirectToHTTPS (every request gets a 301 to
-  #                                 HTTPS).
+  #                                 the gateway's HTTPS port; no other route can attach).
   #                         TLS:    hostname; passthrough, routed by SNI with TLSRoutes. No
   #                                 tls (the workload terminates TLS).
   #                         TCP:    namespace (required: the only namespace that may attach a
-  #                                 TCPRoute). No tls.
-  #      infrastructure:  the generated Deployment, Service, autoscaler, and disruption budget
-  #                       (phase 2). Defaults:
-  #                         replicas: 2
+  #                                 TCPRoute). No tls or hostname.
+  #                       Listeners on one port must share a protocol and have different
+  #                       hostnames; HTTPS listeners sharing a port each need a hostname.
+  #      infrastructure:  rendered as the ConfigMap <gateway>-infrastructure, which patches
+  #                       the Deployment, Service, autoscaler, and disruption budget Istio
+  #                       generates (README, "Infrastructure"). Defaults:
+  #                         replicas: 2                      # ignored while autoscaling
   #                         autoscaling: { enabled: false, minReplicas: 2, maxReplicas: 5 }
-  #                         podDisruptionBudget: { minAvailable: 1 }
-  #                         topologySpread: true
+  #                         podDisruptionBudget: { minAvailable: 1 }   # below the replicas
+  #                         topologySpread: true             # spread across nodes
   #                         nodeSelector: {}
   #                         tolerations: []
-  #                         resources: {}
+  #                         resources: {}                    # the istio-proxy container's
+  #                       The pods also always get seccompProfile RuntimeDefault, which the
+  #                       policy chart's baseline requires.
   #    Namespaces opt in to the https and tls-passthrough gateways with the label
   #    ingress.boundary.posture.dev/<gateway>: "true", set when the namespace is created.
   #    Every enabled gateway needs at least one enabled listener.
@@ -162,15 +169,17 @@ mtls:
 meshDefaultDeny: false
 
 accessLogs:
-  # -- Access logs for every gateway and waypoint, with Istio's built-in envoy provider
-  #    (phases 2 and 3).
+  # -- Access logs for every gateway (and, from phase 3, waypoint): a Telemetry
+  #    access-logs-<gateway> with Istio's built-in envoy provider, logging to the pod's stdout.
   enabled: true
 
 # -- TLS settings for every TLS-terminating (HTTPS) listener; a listener's own tls overrides
-#    them key by key (phase 2).
+#    them key by key. Rendered as one EnvoyFilter per gateway, tls-<gateway>.
 tls:
   # TLSv1_2 or TLSv1_3; minVersion may not be above maxVersion.
   minVersion: TLSv1_2
   maxVersion: TLSv1_3
   # TLS 1.2 cipher suites (TLS 1.3's aren't configurable in Envoy). Empty: Envoy's defaults.
+  # Not allowed together with minVersion TLSv1_3; a listener that raises minVersion to
+  # TLSv1_3 drops the inherited ones.
   cipherSuites: []

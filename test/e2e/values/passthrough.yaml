@@ -1,0 +1,5 @@
+# Turns on the tls-passthrough gateway (with values/ingress.yaml).
+ingress:
+  gateways:
+    tls-passthrough:
+      enabled: true

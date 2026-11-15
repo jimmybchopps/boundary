@@ -1,0 +1,5 @@
+# Turns on the tcp gateway (with values/ingress.yaml).
+ingress:
+  gateways:
+    tcp:
+      enabled: true

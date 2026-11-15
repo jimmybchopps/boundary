@@ -235,22 +235,251 @@ wait_ready() {
   done
 }
 
+# The namespace this chart's ingress gateways run in (ingress.namespace).
+INGRESS_NAMESPACE=ingress-gateway
+
 # install_boundary <example file under examples/> [helm args...]
 # This chart as release "boundary" in istio-system (it creates objects in several namespaces,
 # each set explicitly). Extra arguments go to helm after the example, e.g. --set mtls.mode=...
+# or -f "$HERE/values/ingress.yaml". Waits until every ingress gateway is programmed and its
+# Deployment is available.
 install_boundary() {
   local example=$1
   shift
   quiet "$HELM" upgrade --install boundary "$ROOT/charts/boundary" -n istio-system \
     --reset-values -f "$ROOT/examples/${example}" --set "mesh=${MESH}" "$@" --wait
+  wait_gateways
   info "boundary installed (examples/${example}${*:+ $*})"
 }
 
+# wait_gateways: every Gateway in the ingress namespace is Programmed and the Deployment Istio
+# generates for it (<gateway>-istio) is available.
+wait_gateways() {
+  local gateway
+  for gateway in $("$KUBECTL" -n "$INGRESS_NAMESPACE" get gateways -o jsonpath='{.items[*].metadata.name}'); do
+    quiet "$KUBECTL" -n "$INGRESS_NAMESPACE" wait --for=condition=Programmed "gateway/$gateway" --timeout=180s ||
+      { "$KUBECTL" -n "$INGRESS_NAMESPACE" get "gateway/$gateway" -o yaml >&2; return 1; }
+    retry "$KUBECTL" -n "$INGRESS_NAMESPACE" get "deployment/${gateway}-istio" ||
+      die "Istio generated no Deployment for gateway ${gateway}"
+    quiet "$KUBECTL" -n "$INGRESS_NAMESPACE" rollout status "deployment/${gateway}-istio" --timeout=180s
+  done
+}
+
 # uninstall_boundary: its objects are mesh-wide, so every scenario that installs it removes it
-# in its teardown, before the next scenario's baseline.
+# in its teardown, before the next scenario's baseline. Waits until the Deployments Istio
+# generated for its gateways are gone, so the next scenario's gateways start fresh.
 uninstall_boundary() {
   "$HELM" uninstall boundary -n istio-system --wait >/dev/null 2>&1 || true
+  "$KUBECTL" -n "$INGRESS_NAMESPACE" wait --for=delete deployment \
+    -l gateway.istio.io/managed=istio.io-gateway-controller --timeout=120s >/dev/null 2>&1 || true
   info "boundary uninstalled"
+}
+
+# retry <command...>: runs it until it succeeds, for up to about 30 seconds.
+retry() {
+  local _attempt
+  for _attempt in $(seq 1 15); do
+    if "$@" >/dev/null 2>&1; then return 0; fi
+    sleep 2
+  done
+  return 1
+}
+
+# ---------------------------------------------------------------------------------------------
+# Certificates (ingress scenarios)
+#
+# A CA and certificates signed by it, in CERTS (a directory run.sh creates and removes).
+
+# make_ca: the run's CA, once (CERTS/ca.crt, CERTS/ca.key).
+make_ca() {
+  [[ -f $CERTS/ca.crt ]] && return 0
+  quiet openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=boundary-e2e-ca" \
+    -keyout "$CERTS/ca.key" -out "$CERTS/ca.crt"
+}
+
+# make_cert <name> <hostname>...: CERTS/<name>.crt and .key for those hostnames, signed by the
+# CA, with a fresh serial. ORG=<token> puts that token in the subject (O=<token>), so a check
+# can tell two certificates for the same hostnames apart, e.g. ORG=rotated make_cert apps ...
+make_cert() {
+  local name=$1
+  shift
+  make_ca
+  local san="" host
+  for host in "$@"; do san+="${san:+,}DNS:${host}"; done
+  printf 'subjectAltName=%s\n' "$san" >"$CERTS/$name.ext"
+  quiet openssl req -newkey rsa:2048 -nodes -subj "/CN=$1/O=${ORG:-boundary-e2e}" \
+    -keyout "$CERTS/$name.key" -out "$CERTS/$name.csr"
+  quiet openssl x509 -req -in "$CERTS/$name.csr" -CA "$CERTS/ca.crt" -CAkey "$CERTS/ca.key" \
+    -set_serial "0x$(openssl rand -hex 8)" -days 2 -extfile "$CERTS/$name.ext" -out "$CERTS/$name.crt"
+}
+
+# tls_secret <namespace> <secret> <cert name>: a kubernetes.io/tls Secret from CERTS/<cert>,
+# created or replaced.
+tls_secret() {
+  "$KUBECTL" -n "$1" create secret tls "$2" --cert="$CERTS/$3.crt" --key="$CERTS/$3.key" \
+    --dry-run=client -o yaml | quiet "$KUBECTL" apply -f -
+}
+
+# copy_to <ns>/<workload> <local file> <path>: writes the file into the workload's client
+# container (e.g. the CA, for curl --cacert).
+copy_to() {
+  local ns=${1%%/*} name=${1#*/}
+  "$KUBECTL" -n "$ns" exec -i "deploy/${name}" -c client -- sh -c "cat > '$3'" <"$2"
+}
+
+# ---------------------------------------------------------------------------------------------
+# Ingress (gateways and routes)
+
+# gateway_curl <ns>/<workload> <gateway> <host> <port> <curl args...>
+# curl from the workload's client container to <gateway>'s Service, with <host> as the SNI and
+# Host (--connect-to), e.g.
+#   gateway_curl client/x https api.apps.e2e.test 443 --cacert /tmp/ca.crt https://api.apps.e2e.test/
+gateway_curl() {
+  local ns=${1%%/*} name=${1#*/} gateway=$2 host=$3 port=$4
+  shift 4
+  "$KUBECTL" -n "$ns" exec "deploy/${name}" -c client -- curl -sS -m 5 \
+    --connect-to "${host}:${port}:${gateway}-istio.${INGRESS_NAMESPACE}.svc.cluster.local:${port}" "$@"
+}
+
+# status_is <want> <gateway_curl args...>: the response's status code is <want>.
+status_is() {
+  local want=$1 got
+  shift
+  got=$(gateway_curl "$@" -o /dev/null -w '%{http_code}' 2>/dev/null) || true
+  [[ $got == "$want" ]]
+}
+
+# redirects_to <location> <gateway_curl args...>: the response is a 301 to <location>.
+redirects_to() {
+  local want=$1 got
+  shift
+  got=$(gateway_curl "$@" -o /dev/null -w '%{http_code} %{redirect_url}' 2>/dev/null) || true
+  [[ $got == "301 $want" ]]
+}
+
+# connects <gateway_curl args...>: the request gets any HTTP response.
+connects() {
+  gateway_curl "$@" -o /dev/null >/dev/null 2>&1
+}
+
+# refused <gateway_curl args...>: the request gets no HTTP response (e.g. the TLS handshake
+# fails).
+refused() {
+  ! connects "$@"
+}
+
+# subject_has <token> <gateway_curl args...>: the subject of the certificate the server
+# presented (curl -v) contains token.
+subject_has() {
+  local token=$1 subject
+  shift
+  subject=$(gateway_curl "$@" -v -o /dev/null 2>&1 | grep -i 'subject:' | head -n 1) || true
+  [[ $subject == *"$token"* ]]
+}
+
+# route <kind> <namespace> <name> <gateway> <section or ""> <hostnames ("" for none)> <service> <port>
+# A Gateway API route (HTTPRoute, TLSRoute, TCPRoute) in <namespace>, attached to <gateway> in
+# the ingress namespace (listener <section>, or every listener when empty), sending everything
+# to <service>:<port>.
+route() {
+  local kind=$1 ns=$2 name=$3 gateway=$4 section=$5 hostnames=$6 service=$7 port=$8 h
+  local hosts="" sectionLine=""
+  for h in $hostnames; do hosts+="
+    - ${h}"; done
+  if [[ -n $section ]]; then sectionLine="sectionName: ${section}"; fi
+  "$KUBECTL" apply -f - >/dev/null <<EOF
+apiVersion: gateway.networking.k8s.io/v1
+kind: ${kind}
+metadata: { name: ${name}, namespace: ${ns} }
+spec:
+  parentRefs:
+    - name: ${gateway}
+      namespace: ${INGRESS_NAMESPACE}
+      ${sectionLine}
+  ${hosts:+hostnames: ${hosts}}
+  rules:
+    - backendRefs:
+        - { name: ${service}, port: ${port} }
+EOF
+}
+
+# route_accepted <kind> <ns>/<name> <True|False> [reason]: the route's Accepted condition (on
+# its first parent) has that status, and that reason when given.
+route_accepted() {
+  local kind=$1 ns=${2%%/*} name=${2#*/} want=$3 reason=${4:-} got
+  got=$("$KUBECTL" -n "$ns" get "$kind" "$name" \
+    -o jsonpath='{.status.parents[0].conditions[?(@.type=="Accepted")].status}/{.status.parents[0].conditions[?(@.type=="Accepted")].reason}')
+  [[ ${got%%/*} == "$want" && ( -z $reason || ${got#*/} == "$reason" ) ]]
+}
+
+# tls_workload <namespace> <name> <port> <secret>: like workload, but the server terminates TLS
+# itself (agnhost netexec over HTTPS on <port>), with the certificate in Secret <secret>
+# (mounted from a secret volume). For TLS passthrough.
+tls_workload() {
+  local ns=$1 name=$2 port=$3 secret=$4
+  "$KUBECTL" apply -f - >/dev/null <<EOF
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: ${name}, namespace: ${ns} }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: ${name}, namespace: ${ns} }
+spec:
+  replicas: 1
+  selector: { matchLabels: { e2e.boundary.posture.dev/deployment: ${name} } }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: ${name}, e2e.boundary.posture.dev/deployment: ${name} }
+    spec:
+      serviceAccountName: ${name}
+      terminationGracePeriodSeconds: 1
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile: { type: RuntimeDefault }
+      volumes:
+        - name: tls
+          secret: { secretName: ${secret} }
+      containers:
+        - name: server
+          image: ${AGNHOST_IMAGE}
+          args:
+            - netexec
+            - --http-port=${port}
+            - --udp-port=-1
+            - --tls-cert-file=/tls/tls.crt
+            - --tls-private-key-file=/tls/tls.key
+          volumeMounts:
+            - { name: tls, mountPath: /tls, readOnly: true }
+          readinessProbe:
+            tcpSocket: { port: ${port} }
+            periodSeconds: 2
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: ${name}, namespace: ${ns} }
+spec:
+  selector: { app.kubernetes.io/name: ${name} }
+  ports:
+    - { name: tls, port: ${port}, targetPort: ${port} }
+EOF
+}
+
+# gateway_pods <gateway>: its pods' names and UIDs with their restart counts, one per line, for
+# comparing before and after a change.
+gateway_pods() {
+  "$KUBECTL" -n "$INGRESS_NAMESPACE" get pods -l "gateway.networking.k8s.io/gateway-name=$1" \
+    -o jsonpath='{range .items[*]}{.metadata.uid} {.status.containerStatuses[0].restartCount}{"\n"}{end}' | sort
+}
+
+# gateway_logs_have <gateway> <text>: the gateway's pods logged a line containing text.
+gateway_logs_have() {
+  "$KUBECTL" -n "$INGRESS_NAMESPACE" logs -l "gateway.networking.k8s.io/gateway-name=$1" \
+    -c istio-proxy --tail=-1 2>/dev/null | grep -qF -- "$2"
 }
 
 # restart_workloads: replaces every pod in the scenario's namespaces and waits until only the
@@ -411,6 +640,14 @@ dump_state() {
   local ns
   printf '\n--- mesh-wide (istio-system)\n'
   "$KUBECTL" -n istio-system get peerauthentications,authorizationpolicies 2>&1 || true
+  printf '\n--- ingress (%s)\n' "$INGRESS_NAMESPACE"
+  "$KUBECTL" -n "$INGRESS_NAMESPACE" get gateways,pods,services,configmaps,envoyfilters,telemetries -o wide 2>&1 || true
+  "$KUBECTL" -n "$INGRESS_NAMESPACE" get gateways \
+    -o jsonpath='{range .items[*]}{.metadata.name}: {range .status.conditions[*]}{.type}={.status}({.reason}) {end}| listeners: {range .status.listeners[*]}{.name}={.attachedRoutes} {end}{"\n"}{end}' 2>&1 || true
+  "$KUBECTL" -n "$INGRESS_NAMESPACE" get events --sort-by=.lastTimestamp 2>&1 | tail -n 15 || true
+  printf '\n--- routes\n'
+  "$KUBECTL" get httproutes,tlsroutes,tcproutes -A \
+    -o jsonpath='{range .items[*]}{.kind} {.metadata.namespace}/{.metadata.name}: {range .status.parents[*].conditions[*]}{.type}={.status}({.reason}) {end}{"\n"}{end}' 2>&1 || true
   for ns in "${NAMESPACES[@]}"; do
     printf '\n--- namespace %s\n' "$ns"
     "$KUBECTL" -n "$ns" get pods -o wide 2>&1 || true

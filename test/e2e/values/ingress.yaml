@@ -1,0 +1,36 @@
+# The ingress scenarios' overlay, passed after an example (install_boundary <example> -f ...).
+# Every gateway's Service is ClusterIP: the clients are in the cluster, and k3s's servicelb
+# can't give two LoadBalancer Services port 443. Hostnames are under e2e.test, matching the
+# certificates _ingress.sh creates. The chart-wide maximum is TLS 1.2 and the internal
+# listener's override requires TLS 1.3, so each setting is observable on its own.
+tls:
+  minVersion: TLSv1_2
+  maxVersion: TLSv1_2
+ingress:
+  gateways:
+    https:
+      service: { type: ClusterIP }
+      listeners:
+        https:
+          hostname: "*.apps.e2e.test"
+          certificates: [apps-tls]
+        http:
+          hostname: "*.apps.e2e.test"
+        internal:
+          port: 443
+          protocol: HTTPS
+          hostname: "*.internal.e2e.test"
+          certificates: [internal-tls]
+          tls: { minVersion: TLSv1_3, maxVersion: TLSv1_3 }
+    tls-passthrough:
+      service: { type: ClusterIP }
+      listeners:
+        tls:
+          hostname: "*.passthrough.e2e.test"
+    tcp:
+      service: { type: ClusterIP }
+      listeners:
+        db:
+          port: 5432
+          protocol: TCP
+          namespace: databases

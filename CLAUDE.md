@@ -10,7 +10,7 @@ The first phases support **Istio in ambient mode**. Then Envoy Gateway (the ingr
 and for clusters with no mesh), Linkerd, and Cilium, each followed by an integration phase.
 Multi-cluster is out of scope for now.
 
-The build order is in `PLAN.md`. Work through it phase by phase.
+The build order is in `docs/PLAN.md`. Work through it phase by phase.
 
 ## Prerequisites (never installed by this chart)
 
@@ -253,7 +253,8 @@ charts/boundary/
   Chart.yaml  values.yaml  values.schema.json
   templates/
     _helpers.tpl        names, labels, annotations, the mesh and implementation switches
-    _model.tpl          values -> normalized gateways, listeners, allowedHosts
+    _model.tpl          values -> normalized gateways, listeners, allowedHosts; derived
+                        names, redirect port, and the per-listener TLS patches
     istio/              gateways, waypoints, infrastructure, redirect, tls (EnvoyFilter),
                         egress authorization, mesh-wide, telemetry
     envoy-gateway/      phase 5
@@ -265,7 +266,8 @@ examples/               values files that double as fixtures (lint, kubeconform,
 test/model-probe/       test-only chart rendering the model as YAML for unit tests
 test/e2e/               k3d harness: run.sh, lib.sh, scenarios/<name>.sh
 Makefile                pinned tool versions and every test target
-PLAN.md
+README.md               install, usage, infrastructure keys, gateway pod compliance
+docs/PLAN.md
 ```
 
 ## Testing
@@ -293,8 +295,8 @@ needs an e2e case that shows the allowed path works and the refused path is refu
 
 | Phase | Area | Status |
 |---|---|---|
-| 1 | Skeleton, model, mesh-wide settings | in progress: static suite passes; e2e and CI not yet run |
-| 2 | Istio ingress gateways and TLS settings | not started |
+| 1 | Skeleton, model, mesh-wide settings | done |
+| 2 | Istio ingress gateways and TLS settings | in progress: static suite passes; e2e not yet run |
 | 3 | Istio egress gateways | not started |
 | 4 | Integration with `posture` and `policy` (Istio) | not started |
 | 5 | Envoy Gateway ingress (Linkerd and no mesh) and Linkerd egress | not started |

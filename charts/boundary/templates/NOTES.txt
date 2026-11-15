@@ -13,6 +13,20 @@ Mesh-wide, in {{ $model.rootNamespace }}:
   default deny:  off
 {{- end }}
 
+Ingress gateways, in {{ $model.ingress.namespace }}:
+{{- range $gateway := $model.ingress.gateways }}
+  {{ $gateway.name }} (Service {{ $gateway.name }}-istio, {{ $gateway.service.type }}):
+  {{- range $gateway.listeners }}
+    {{ .name }}: {{ .protocol }} {{ int .port }}{{ with .hostname }} {{ . }}{{ end }}
+    {{- if eq .protocol "TCP" }}, routes from namespace {{ .namespace }}
+    {{- else if .redirectToHTTPS }}, redirects to HTTPS
+    {{- else }}, routes from namespaces labeled {{ $gateway.routeLabel }}: "true"
+    {{- end }}
+  {{- end }}
+{{- else }}
+  none
+{{- end }}
+
 Prerequisites this chart never installs:
   - the Gateway API CRDs, {{ index .Chart.Annotations "boundary.posture.dev/gateway-api-version" }} or later, {{ index .Chart.Annotations "boundary.posture.dev/gateway-api-channel" }} channel
   - the mesh ({{ $model.mesh }}), installed and healthy

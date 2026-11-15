@@ -1,0 +1,72 @@
+{{- /*
+One Gateway per enabled ingress.gateways entry (gatewayClassName istio), in the ingress
+namespace. Route attachment: HTTPS, TLS, and plain HTTP listeners admit routes from namespaces
+labeled ingress.boundary.posture.dev/<gateway>: "true"; an HTTP listener with redirectToHTTPS
+admits only routes from its own namespace (the chart's redirect route); a TCP listener admits
+routes from its one namespace.
+*/ -}}
+{{- $model := include "boundary.model" . | fromJson -}}
+{{- if eq $model.implementation "istio" }}
+{{- range $gateway := $model.ingress.gateways }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ $gateway.name }}
+  namespace: {{ $model.ingress.namespace }}
+  labels:
+    {{- include "boundary.labels" $ | nindent 4 }}
+  annotations:
+    {{- include "boundary.annotations" $gateway.path | nindent 4 }}
+    networking.istio.io/service-type: {{ $gateway.service.type }}
+spec:
+  gatewayClassName: istio
+  infrastructure:
+    parametersRef:
+      group: ""
+      kind: ConfigMap
+      name: {{ $gateway.infrastructureName }}
+  {{- with $gateway.service.loadBalancerIP }}
+  addresses:
+    - type: IPAddress
+      value: {{ . | quote }}
+  {{- end }}
+  listeners:
+    {{- range $listener := $gateway.listeners }}
+    - name: {{ $listener.name }}
+      port: {{ int $listener.port }}
+      protocol: {{ $listener.protocol }}
+      {{- with $listener.hostname }}
+      hostname: {{ . | quote }}
+      {{- end }}
+      {{- if eq $listener.protocol "HTTPS" }}
+      tls:
+        mode: Terminate
+        certificateRefs:
+          {{- range $listener.certificates }}
+          - group: ""
+            kind: Secret
+            name: {{ . }}
+          {{- end }}
+      {{- else if eq $listener.protocol "TLS" }}
+      tls:
+        mode: Passthrough
+      {{- end }}
+      allowedRoutes:
+        namespaces:
+          {{- if eq $listener.protocol "TCP" }}
+          from: Selector
+          selector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $listener.namespace }}
+          {{- else if $listener.redirectToHTTPS }}
+          from: Same
+          {{- else }}
+          from: Selector
+          selector:
+            matchLabels:
+              {{ $gateway.routeLabel }}: "true"
+          {{- end }}
+    {{- end }}
+{{- end }}
+{{- end }}

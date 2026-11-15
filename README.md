@@ -1,0 +1,192 @@
+# boundary
+
+A Helm chart for security at the edge of the cluster: the gateways traffic enters and leaves
+through, the cluster-wide limit on where traffic may leave for, and the mesh-wide defaults that
+apply to every namespace.
+
+It is **mesh-aware, not mesh-installing**: it creates resources in the mesh that's already
+running and never installs the mesh itself. Today it supports **Istio in ambient mode**: the
+mesh-wide settings and the ingress gateways. Egress gateways, Envoy Gateway with Linkerd or no
+mesh, and Cilium follow (see [docs/PLAN.md](docs/PLAN.md)).
+
+Companion charts: `policy` (the cluster's admission policies) and `posture` (each namespace's
+network policies, authorization, and policy exceptions). boundary never references them; they
+share a few conventions (namespace names, the route attachment label, the `allowedHosts`
+shape).
+
+## Prerequisites
+
+This chart installs none of these:
+
+- **Istio in ambient mode**, installed and healthy: istiod, istio-cni, ztunnel. Tested with
+  Istio 1.32.
+- **The Kubernetes Gateway API CRDs**, v1.6.0 or later, standard channel. They must exist
+  before Istio starts. Without them the install fails with an error like:
+
+      no matches for kind "Gateway" in version "gateway.networking.k8s.io/v1"
+
+  Install them, restart istiod, then install this chart again.
+
+  Some distributions ship their own Gateway API CRDs. k3s, for example, ships them as the
+  `gateway-api-crd` add-on. Check which version and channel are installed, or turn the add-on
+  off and install the CRDs yourself.
+- **The gateway namespaces**, `ingress-gateway` and `egress-gateway` by default. Each must be
+  created, enrolled in the mesh (`istio.io/dataplane-mode=ambient`), and have its `posture`
+  release installed first. On a cluster running the `policy` chart, pods in a namespace without
+  `posture-exceptions` are refused.
+- **TLS certificate Secrets** (`kubernetes.io/tls`) in the ingress namespace, named by the
+  listeners' `certificates`. This chart only references them. Replacing a Secret takes effect
+  without restarting the gateway.
+
+## Install
+
+```sh
+helm install boundary ./charts/boundary -n istio-system -f values.yaml
+```
+
+Objects go into the namespaces they belong in (`istio.rootNamespace`, `ingress.namespace`),
+whatever the release namespace. Every value is checked by the chart's JSON schema and its model.
+A setting the chart can't apply fails the install with the values path and the reason; it is
+never silently ignored. Every object carries the annotation `boundary.posture.dev/rule`, the
+values path it came from.
+
+## Mesh-wide settings
+
+| Value | Renders (in `istio.rootNamespace`) |
+|---|---|
+| `mtls.mode: STRICT` (default) | PeerAuthentication `mtls-strict` |
+| `mtls.mode: PERMISSIVE` | PeerAuthentication `mtls-permissive` |
+| `mtls.mode: inherit` | nothing |
+| `meshDefaultDeny: true` | AuthorizationPolicy `deny-all`, which allows nothing |
+
+## Ingress gateways
+
+Each enabled entry in `ingress.gateways` becomes a Gateway (`gatewayClassName: istio`) in
+`ingress.namespace`, with its own Deployment and Service (`<gateway>-istio`) and its own address.
+Three gateways are defined:
+
+| Gateway | Default | Listeners |
+|---|---|---|
+| `https` | on | `https` (443, terminates TLS with `apps-tls`), `http` (80, redirects to HTTPS) |
+| `tls-passthrough` | off | `tls` (443, TLS passed through to the workload, routed by SNI) |
+| `tcp` | off | none: add one listener per TCP service |
+
+**Attaching routes.** A namespace opts in to the `https` and `tls-passthrough` gateways with the
+label `ingress.boundary.posture.dev/<gateway>: "true"`, set when the namespace is created. Its
+HTTPRoutes (or TLSRoutes) then reference the Gateway in the ingress namespace:
+
+```yaml
+parentRefs:
+  - name: https
+    namespace: ingress-gateway
+```
+
+Routes from namespaces without the label aren't accepted; the route's status shows
+`NotAllowedByListeners`. An HTTP listener with `redirectToHTTPS` admits only the chart's own
+redirect route, so every plain HTTP request gets a 301 to HTTPS.
+
+**TCP services.** Raw TCP has no hostname, so each TCP service gets its own listener, which only
+its namespace may use:
+
+```yaml
+ingress:
+  gateways:
+    tcp:
+      enabled: true
+      listeners:
+        postgres: { port: 5432, protocol: TCP, namespace: databases }
+```
+
+**Several hostnames on one port.** Listeners may share a port when they share a protocol and
+have different hostnames. HTTPS listeners that share a port each need a hostname, because their
+TLS settings are matched by SNI.
+
+### TLS settings
+
+`tls` (minimum and maximum version, TLS 1.2 cipher suites) applies to every HTTPS listener. A
+listener's own `tls` overrides it key by key. Istio has no Gateway API field for these settings,
+so they're applied with one EnvoyFilter per gateway (`tls-<gateway>`). It patches each
+terminating listener's TLS context, matched by port, and by SNI when listeners share a port.
+
+EnvoyFilter patches Envoy's internals, so an Istio upgrade can break it. The e2e checks the
+negotiated TLS versions and that certificates still load. Treat a new Istio version as
+unsupported until those checks pass on it.
+
+### Access logs
+
+With `accessLogs.enabled` (the default), each gateway gets a Telemetry (`access-logs-<gateway>`)
+using Istio's built-in `envoy` provider: one line per request or connection on the gateway pod's
+stdout.
+
+### Infrastructure
+
+Each gateway's `infrastructure` becomes a ConfigMap, `<gateway>-infrastructure`, referenced by
+the Gateway's `spec.infrastructure.parametersRef`. Istio applies each key as a strategic-merge
+patch to what it generates for the Gateway. Istio 1.32 reads these keys:
+
+| Key | Patches | Set by this chart |
+|---|---|---|
+| `deployment` | the Deployment | always: pod `seccompProfile: RuntimeDefault`; `replicas` (unless autoscaling); with `topologySpread`, a spread across nodes; `nodeSelector`, `tolerations`, and the `istio-proxy` container's `resources`, when set |
+| `service` | the Service | `metadata.annotations`, when `service.annotations` is set |
+| `horizontalPodAutoscaler` | an HPA, created only when the key is present | `minReplicas` and `maxReplicas`, when `autoscaling.enabled` |
+| `podDisruptionBudget` | a PDB, created only when the key is present | always: `minAvailable` |
+| `serviceAccount` | the ServiceAccount | not used |
+
+The Service type is passed to Istio with the Gateway annotation `networking.istio.io/service-type`.
+`service.loadBalancerIP` becomes the Gateway's `spec.addresses`.
+
+### Gateway pod compliance
+
+The pods Istio generates are made to pass the `policy` chart's baseline through the
+infrastructure ConfigMap, never through `posture` exceptions. Here is the comparison for Istio
+1.32's generated gateway pod. The e2e checks the baked-in rows on a live cluster.
+
+**Baked-in policies (always enforced):**
+
+| Policy | Generated pod | Result |
+|---|---|---|
+| `disallow-host-namespaces` | no hostNetwork, hostPID, or hostIPC | passes |
+| `disallow-host-path` | volumes: emptyDir, downwardAPI, projected | passes |
+| `disallow-host-ports` | no hostPort | passes |
+| `disallow-privilege-escalation` | `allowPrivilegeEscalation: false` | passes |
+| `disallow-privileged-containers` | `privileged: false` | passes |
+| `require-drop-all-capabilities` | drops ALL, adds nothing | passes |
+| `require-run-as-non-root` | `runAsNonRoot: true`, uid 1337 | passes |
+| `restrict-apparmor` | not set | passes |
+| `restrict-external-ips` | the Service sets no externalIPs | passes |
+| `restrict-image-registries` | Istio's proxy image | site-specific: list the registry the proxy image comes from |
+| `restrict-proc-mount` | default | passes |
+| `restrict-seccomp` | **unset by Istio** | **fixed**: the ConfigMap sets `RuntimeDefault` |
+| `restrict-selinux` | not set | passes |
+| `restrict-sysctls` | `net.ipv4.ip_unprivileged_port_start` only, a safe sysctl | passes |
+| `restrict-volume-types` | emptyDir, downwardAPI, projected | passes |
+
+**Optional policies that are on by default:** these still flag the generated pod. They're
+resolved with the `policy` chart installed (docs/PLAN.md, phase 4):
+
+| Policy | Finding |
+|---|---|
+| `disallow-mesh-opt-out` | Istio labels the pod `sidecar.istio.io/inject: "false"` |
+| `require-standard-labels` | no `app.kubernetes.io/name` label |
+| `require-image-digest` | the proxy image is pinned by tag, not digest |
+| `restrict-loadbalancer-services` | the default `LoadBalancer` Service needs the ingress namespace in the policy's `namespaces` |
+| `require-probes` (audit by default) | readiness and startup probes, but no liveness probe |
+
+`require-read-only-root-filesystem` and `require-resource-limits` pass. Istio sets a read-only
+root filesystem, and the proxy's default resources (`global.proxy.resources`) include CPU and
+memory requests and a memory limit.
+
+## Development
+
+Tests follow the same harness as `posture`. Tools are pinned in the [Makefile](Makefile) and
+installed into `.bin/`.
+
+```sh
+make tools            # helm, helm-unittest, kubeconform
+make test             # lint, unit tests, kubeconform on every example
+make test-all-helm    # the same under Helm 3.14, the latest 3.x, and 4
+make e2e MESH=istio   # k3d end-to-end tests (Docker and openssl); E2E_ARGS=<scenario> E2E_KEEP=1
+```
+
+See [CLAUDE.md](CLAUDE.md) for the values contract and conventions, and [docs/PLAN.md](docs/PLAN.md) for
+the build order.

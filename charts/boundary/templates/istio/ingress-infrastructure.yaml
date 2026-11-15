@@ -1,0 +1,21 @@
+{{- /*
+One infrastructure ConfigMap per enabled ingress gateway, <gateway>-infrastructure, referenced
+by the Gateway's parametersRef (see _infrastructure.tpl).
+*/ -}}
+{{- $model := include "boundary.model" . | fromJson -}}
+{{- if eq $model.implementation "istio" }}
+{{- range $gateway := $model.ingress.gateways }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $gateway.infrastructureName }}
+  namespace: {{ $model.ingress.namespace }}
+  labels:
+    {{- include "boundary.labels" $ | nindent 4 }}
+  annotations:
+    {{- include "boundary.annotations" (printf "%s.infrastructure" $gateway.path) | nindent 4 }}
+data:
+  {{- include "boundary.istio.infrastructure" $gateway | nindent 2 }}
+{{- end }}
+{{- end }}

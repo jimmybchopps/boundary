@@ -22,7 +22,7 @@ tests:
         mtls: { mode: inherit }
         meshDefaultDeny: true
         accessLogs: { enabled: false }
-        tls: { minVersion: TLSv1_3, cipherSuites: [ECDHE-RSA-AES256-GCM-SHA384] }
+        tls: { maxVersion: TLSv1_2, cipherSuites: [ECDHE-RSA-AES256-GCM-SHA384] }
         ingress: { namespace: edge-in }
         egress: { namespace: edge-out }
     documentSelector: { path: path, value: model }
@@ -33,7 +33,7 @@ tests:
       - equal: { path: accessLogs, value: { enabled: false } }
       - equal:
           path: tls
-          value: { minVersion: TLSv1_3, maxVersion: TLSv1_3, cipherSuites: [ECDHE-RSA-AES256-GCM-SHA384] }
+          value: { minVersion: TLSv1_2, maxVersion: TLSv1_2, cipherSuites: [ECDHE-RSA-AES256-GCM-SHA384] }
       - equal: { path: ingress.namespace, value: edge-in }
       - equal: { path: egress.namespace, value: edge-out }
 

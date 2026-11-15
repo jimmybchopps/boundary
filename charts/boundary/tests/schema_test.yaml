@@ -97,3 +97,16 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: 'boundary: mesh: "cilium" isn''t supported yet'
+
+  - it: rejects a hostname that isn't a DNS name
+    set:
+      ingress.gateways.https.listeners.https.hostname: "apps.example.mil:443"
+    asserts:
+      - failedTemplate:
+          errorPattern: "hostname"
+
+  - it: accepts a wildcard hostname
+    set:
+      ingress.gateways.https.listeners.https.hostname: "*.apps.example.mil"
+    asserts:
+      - notFailedTemplate: {}

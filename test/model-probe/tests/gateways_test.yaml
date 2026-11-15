@@ -34,6 +34,7 @@ tests:
               hostname: ""
               certificates: [apps-tls]
               tls: { minVersion: TLSv1_2, maxVersion: TLSv1_3, cipherSuites: [] }
+              tlsOverride: false
 
   - it: disabled gateways are dropped
     documentSelector: { path: path, value: model }
@@ -94,12 +95,23 @@ tests:
   - it: a listener's tls overrides the chart-wide tls key by key
     set:
       boundary.tls.cipherSuites: [ECDHE-RSA-AES256-GCM-SHA384]
+      boundary.ingress.gateways.https.listeners.https.tls: { maxVersion: TLSv1_2 }
+    documentSelector: { path: path, value: ingress.gateways.https }
+    asserts:
+      - equal:
+          path: "listeners[1].tls"
+          value: { minVersion: TLSv1_2, maxVersion: TLSv1_2, cipherSuites: [ECDHE-RSA-AES256-GCM-SHA384] }
+      - equal: { path: "listeners[1].tlsOverride", value: true }
+
+  - it: a TLS 1.3 override drops the inherited TLS 1.2 cipher suites
+    set:
+      boundary.tls.cipherSuites: [ECDHE-RSA-AES256-GCM-SHA384]
       boundary.ingress.gateways.https.listeners.https.tls: { minVersion: TLSv1_3 }
     documentSelector: { path: path, value: ingress.gateways.https }
     asserts:
       - equal:
           path: "listeners[1].tls"
-          value: { minVersion: TLSv1_3, maxVersion: TLSv1_3, cipherSuites: [ECDHE-RSA-AES256-GCM-SHA384] }
+          value: { minVersion: TLSv1_3, maxVersion: TLSv1_3, cipherSuites: [] }
 
   - it: a listener may clear the chart-wide cipher suites
     set:
@@ -152,3 +164,53 @@ tests:
     documentSelector: { path: path, value: model }
     asserts:
       - equal: { path: egress, value: { namespace: egress-gateway, default: "", gateways: [] } }
+
+  - it: the https gateway's derived names, route label, and redirect port
+    documentSelector: { path: path, value: ingress.gateways.https }
+    asserts:
+      - equal: { path: routeLabel, value: ingress.boundary.posture.dev/https }
+      - equal: { path: infrastructureName, value: https-infrastructure }
+      - equal: { path: tlsName, value: tls-https }
+      - equal: { path: redirectName, value: redirect-http-to-https-https }
+      - equal: { path: accessLogsName, value: access-logs-https }
+      - equal: { path: redirectPort, value: 443 }
+
+  - it: one HTTPS listener alone on its port gets a port-only TLS patch
+    documentSelector: { path: path, value: ingress.gateways.https }
+    asserts:
+      - equal:
+          path: tlsPatches
+          value:
+            - listener: https
+              path: ingress.gateways.https.listeners.https
+              port: 443
+              sni: ""
+              tls: { minVersion: TLSv1_2, maxVersion: TLSv1_3, cipherSuites: [] }
+              override: false
+
+  - it: HTTPS listeners sharing a port get SNI matches
+    set:
+      boundary.ingress.gateways.https.listeners:
+        https: { hostname: "*.apps.example.mil" }
+        internal:
+          port: 443
+          protocol: HTTPS
+          hostname: "*.internal.example.mil"
+          certificates: [internal-tls]
+          tls: { minVersion: TLSv1_3 }
+    documentSelector: { path: path, value: ingress.gateways.https }
+    asserts:
+      - equal: { path: "tlsPatches[0].sni", value: "*.apps.example.mil" }
+      - equal: { path: "tlsPatches[0].override", value: false }
+      - equal: { path: "tlsPatches[1].listener", value: internal }
+      - equal: { path: "tlsPatches[1].sni", value: "*.internal.example.mil" }
+      - equal: { path: "tlsPatches[1].override", value: true }
+      - equal: { path: "tlsPatches[1].tls", value: { minVersion: TLSv1_3, maxVersion: TLSv1_3, cipherSuites: [] } }
+
+  - it: a gateway without HTTPS listeners has no redirect port or TLS patches
+    set:
+      boundary.ingress.gateways.tls-passthrough.enabled: true
+    documentSelector: { path: path, value: ingress.gateways.tls-passthrough }
+    asserts:
+      - equal: { path: redirectPort, value: 0 }
+      - equal: { path: tlsPatches, value: [] }

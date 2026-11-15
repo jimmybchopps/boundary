@@ -1,0 +1,89 @@
+suite: TLS settings EnvoyFilter (tls)
+templates:
+  - templates/istio/ingress-tls.yaml
+tests:
+  - it: one HTTPS listener is matched by port alone, with the chart-wide settings
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: EnvoyFilter }
+      - isAPIVersion: { of: networking.istio.io/v1alpha3 }
+      - equal: { path: metadata.name, value: tls-https }
+      - equal: { path: metadata.namespace, value: ingress-gateway }
+      - equal: { path: metadata.annotations, value: { boundary.posture.dev/rule: tls } }
+      - equal: { path: spec.workloadSelector, value: { labels: { gateway.networking.k8s.io/gateway-name: https } } }
+      - equal:
+          path: spec.configPatches
+          value:
+            - applyTo: FILTER_CHAIN
+              match:
+                context: GATEWAY
+                listener: { portNumber: 443 }
+              patch:
+                operation: MERGE
+                value:
+                  transport_socket:
+                    name: envoy.transport_sockets.tls
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+                      common_tls_context:
+                        tls_params:
+                          tls_minimum_protocol_version: TLSv1_2
+                          tls_maximum_protocol_version: TLSv1_3
+
+  - it: cipher suites are set when given
+    set:
+      tls.cipherSuites: [ECDHE-RSA-AES256-GCM-SHA384]
+    asserts:
+      - equal:
+          path: "spec.configPatches[0].patch.value.transport_socket.typed_config.common_tls_context.tls_params.cipher_suites"
+          value: [ECDHE-RSA-AES256-GCM-SHA384]
+
+  - it: listeners sharing a port are matched by SNI, each with its own settings
+    set:
+      tls.cipherSuites: [ECDHE-RSA-AES256-GCM-SHA384]
+      ingress.gateways.https.listeners.https.hostname: "*.apps.example.mil"
+      ingress.gateways.https.listeners.internal:
+        port: 443
+        protocol: HTTPS
+        hostname: "*.internal.example.mil"
+        certificates: [internal-tls]
+        tls: { minVersion: TLSv1_3 }
+    asserts:
+      - equal:
+          path: metadata.annotations
+          value: { boundary.posture.dev/rule: "tls, ingress.gateways.https.listeners.internal.tls" }
+      - lengthEqual: { path: spec.configPatches, count: 2 }
+      - equal:
+          path: "spec.configPatches[0].match.listener"
+          value: { portNumber: 443, filterChain: { sni: "*.apps.example.mil" } }
+      - equal:
+          path: "spec.configPatches[0].patch.value.transport_socket.typed_config.common_tls_context.tls_params"
+          value:
+            tls_minimum_protocol_version: TLSv1_2
+            tls_maximum_protocol_version: TLSv1_3
+            cipher_suites: [ECDHE-RSA-AES256-GCM-SHA384]
+      - equal:
+          path: "spec.configPatches[1].match.listener"
+          value: { portNumber: 443, filterChain: { sni: "*.internal.example.mil" } }
+      - equal:
+          path: "spec.configPatches[1].patch.value.transport_socket.typed_config.common_tls_context.tls_params"
+          value:
+            tls_minimum_protocol_version: TLSv1_3
+            tls_maximum_protocol_version: TLSv1_3
+
+  - it: HTTPS listeners on different ports are matched by port
+    set:
+      ingress.gateways.https.listeners.https.hostname: "*.apps.example.mil"
+      ingress.gateways.https.listeners.http.enabled: false
+      ingress.gateways.https.listeners.admin: { port: 8443, protocol: HTTPS, certificates: [admin-tls], tls: { maxVersion: TLSv1_2 } }
+    asserts:
+      - equal: { path: "spec.configPatches[0].match.listener", value: { portNumber: 443 } }
+      - equal: { path: "spec.configPatches[1].match.listener", value: { portNumber: 8443 } }
+      - equal: { path: "spec.configPatches[1].patch.value.transport_socket.typed_config.common_tls_context.tls_params.tls_maximum_protocol_version", value: TLSv1_2 }
+
+  - it: a gateway without HTTPS listeners gets none
+    set:
+      ingress.gateways.https.enabled: false
+      ingress.gateways.tls-passthrough.enabled: true
+    asserts:
+      - hasDocuments: { count: 0 }

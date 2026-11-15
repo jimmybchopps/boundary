@@ -1,0 +1,137 @@
+suite: Gateway (ingress.gateways)
+templates:
+  - templates/istio/ingress-gateway.yaml
+tests:
+  - it: the default https gateway
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: Gateway }
+      - isAPIVersion: { of: gateway.networking.k8s.io/v1 }
+      - equal: { path: metadata.name, value: https }
+      - equal: { path: metadata.namespace, value: ingress-gateway }
+      - equal:
+          path: metadata.annotations
+          value:
+            boundary.posture.dev/rule: ingress.gateways.https
+            networking.istio.io/service-type: LoadBalancer
+      - equal: { path: spec.gatewayClassName, value: istio }
+      - equal:
+          path: spec.infrastructure
+          value: { parametersRef: { group: "", kind: ConfigMap, name: https-infrastructure } }
+      - notExists: { path: spec.addresses }
+
+  - it: an HTTPS listener terminates TLS with its certificates and admits labeled namespaces
+    set:
+      ingress.gateways.https.listeners.https:
+        hostname: "*.apps.example.mil"
+        certificates: [apps-tls, apps-ecdsa-tls]
+    asserts:
+      - equal:
+          path: spec.listeners[?(@.name == "https")]
+          value:
+            name: https
+            port: 443
+            protocol: HTTPS
+            hostname: "*.apps.example.mil"
+            tls:
+              mode: Terminate
+              certificateRefs:
+                - { group: "", kind: Secret, name: apps-tls }
+                - { group: "", kind: Secret, name: apps-ecdsa-tls }
+            allowedRoutes:
+              namespaces:
+                from: Selector
+                selector: { matchLabels: { ingress.boundary.posture.dev/https: "true" } }
+
+  - it: an HTTP listener with redirectToHTTPS admits only its own namespace
+    asserts:
+      - equal:
+          path: spec.listeners[?(@.name == "http")]
+          value:
+            name: http
+            port: 80
+            protocol: HTTP
+            allowedRoutes: { namespaces: { from: Same } }
+
+  - it: an HTTP listener without redirectToHTTPS admits labeled namespaces
+    set:
+      ingress.gateways.https.listeners.http.redirectToHTTPS: false
+    asserts:
+      - equal:
+          path: spec.listeners[?(@.name == "http")].allowedRoutes
+          value:
+            namespaces:
+              from: Selector
+              selector: { matchLabels: { ingress.boundary.posture.dev/https: "true" } }
+
+  - it: a passthrough listener, labeled by its own gateway's name
+    set:
+      ingress.gateways.tls-passthrough.enabled: true
+      ingress.gateways.tls-passthrough.listeners.tls.hostname: "*.passthrough.example.mil"
+    documentSelector: { path: metadata.name, value: tls-passthrough }
+    asserts:
+      - equal:
+          path: spec.listeners
+          value:
+            - name: tls
+              port: 443
+              protocol: TLS
+              hostname: "*.passthrough.example.mil"
+              tls: { mode: Passthrough }
+              allowedRoutes:
+                namespaces:
+                  from: Selector
+                  selector: { matchLabels: { ingress.boundary.posture.dev/tls-passthrough: "true" } }
+
+  - it: a TCP listener admits only its namespace
+    set:
+      ingress.gateways.tcp:
+        enabled: true
+        listeners:
+          postgres: { port: 5432, protocol: TCP, namespace: databases }
+          redis: { port: 6379, protocol: TCP, namespace: cache }
+    documentSelector: { path: metadata.name, value: tcp }
+    asserts:
+      - equal:
+          path: spec.listeners
+          value:
+            - name: postgres
+              port: 5432
+              protocol: TCP
+              allowedRoutes:
+                namespaces:
+                  from: Selector
+                  selector: { matchLabels: { kubernetes.io/metadata.name: databases } }
+            - name: redis
+              port: 6379
+              protocol: TCP
+              allowedRoutes:
+                namespaces:
+                  from: Selector
+                  selector: { matchLabels: { kubernetes.io/metadata.name: cache } }
+
+  - it: disabled gateways and listeners render nothing
+    set:
+      ingress.gateways.https.listeners.http.enabled: false
+    asserts:
+      - hasDocuments: { count: 1 }
+      - lengthEqual: { path: spec.listeners, count: 1 }
+      - equal: { path: "spec.listeners[0].name", value: https }
+
+  - it: loadBalancerIP becomes the Gateway's address
+    set:
+      ingress.gateways.https.service.loadBalancerIP: 10.20.30.40
+    asserts:
+      - equal: { path: spec.addresses, value: [{ type: IPAddress, value: 10.20.30.40 }] }
+
+  - it: the service type is passed to Istio
+    set:
+      ingress.gateways.https.service.type: ClusterIP
+    asserts:
+      - equal: { path: "metadata.annotations[\"networking.istio.io/service-type\"]", value: ClusterIP }
+
+  - it: follows ingress.namespace
+    set:
+      ingress.namespace: edge
+    asserts:
+      - equal: { path: metadata.namespace, value: edge }
