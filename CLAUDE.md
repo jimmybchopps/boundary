@@ -305,7 +305,7 @@ needs an e2e case that shows the allowed path works and the refused path is refu
 |---|---|---|
 | 1 | Skeleton, model, mesh-wide settings | done |
 | 2 | Istio ingress gateways and TLS settings | done |
-| 3 | Istio egress gateways | in progress: static suite passes; e2e not yet run |
+| 3 | Istio egress gateways | done |
 | 4 | Integration with `posture` and `policy` (Istio) | not started |
 | 5 | Envoy Gateway ingress (Linkerd and no mesh) and Linkerd egress | not started |
 | 6 | Linkerd and no-mesh integration | not started |

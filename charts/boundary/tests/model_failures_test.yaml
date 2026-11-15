@@ -428,7 +428,7 @@ tests:
       - failedTemplate:
           errorPattern: 'boundary: ingress.gateways.https.service: loadBalancerIP applies only to type LoadBalancer; type is ClusterIP'
 
-  # Egress gateways (phase 3).
+  # Egress gateways.
   - it: exitNodes and infrastructure.nodeSelector disagreeing on a key fails
     set:
       egress.gateways.default:
