@@ -158,7 +158,11 @@
         "enabled": { "type": "boolean" },
         "port": { "$ref": "#/definitions/port" },
         "protocol": { "type": "string", "enum": ["HTTPS", "HTTP", "TLS", "TCP"] },
-        "hostname": { "type": "string" },
+        "hostname": {
+          "description": "A DNS name, optionally with a leading \"*.\" wildcard.",
+          "type": "string",
+          "pattern": "^(\\*\\.)?[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+        },
         "certificates": {
           "description": "Secret names in the ingress namespace (HTTPS).",
           "type": "array",

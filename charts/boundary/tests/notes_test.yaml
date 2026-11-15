@@ -19,3 +19,22 @@ tests:
       - matchRegexRaw: { pattern: 'Mesh-wide, in mesh-root:' }
       - matchRegexRaw: { pattern: 'mTLS: +inherit \(no PeerAuthentication' }
       - matchRegexRaw: { pattern: 'default deny: +on \(AuthorizationPolicy deny-all\)' }
+
+  - it: lists the ingress gateways and how routes attach
+    set:
+      ingress.gateways.tcp:
+        enabled: true
+        listeners:
+          postgres: { port: 5432, protocol: TCP, namespace: databases }
+    asserts:
+      - matchRegexRaw: { pattern: 'Ingress gateways, in ingress-gateway:' }
+      - matchRegexRaw: { pattern: 'https \(Service https-istio, LoadBalancer\):' }
+      - matchRegexRaw: { pattern: 'http: HTTP 80, redirects to HTTPS' }
+      - matchRegexRaw: { pattern: 'https: HTTPS 443, routes from namespaces labeled ingress\.boundary\.posture\.dev/https: "true"' }
+      - matchRegexRaw: { pattern: 'postgres: TCP 5432, routes from namespace databases' }
+
+  - it: says when there are no ingress gateways
+    set:
+      ingress.gateways.https.enabled: false
+    asserts:
+      - matchRegexRaw: { pattern: 'Ingress gateways, in ingress-gateway:\n  none' }

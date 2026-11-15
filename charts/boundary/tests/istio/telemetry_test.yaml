@@ -1,0 +1,27 @@
+suite: access logs Telemetry (accessLogs)
+templates:
+  - templates/istio/telemetry.yaml
+tests:
+  - it: one per gateway, with the envoy provider
+    set:
+      ingress.gateways.tls-passthrough.enabled: true
+    asserts:
+      - hasDocuments: { count: 2 }
+      - isKind: { of: Telemetry }
+      - isAPIVersion: { of: telemetry.istio.io/v1 }
+      - equal: { path: metadata.annotations, value: { boundary.posture.dev/rule: accessLogs } }
+      - equal: { path: metadata.namespace, value: ingress-gateway }
+      - equal: { path: metadata.name, value: access-logs-tls-passthrough }
+        documentIndex: 1
+      - equal:
+          path: spec
+          value:
+            targetRefs: [{ group: gateway.networking.k8s.io, kind: Gateway, name: https }]
+            accessLogging: [{ providers: [{ name: envoy }] }]
+        documentIndex: 0
+
+  - it: off renders nothing
+    set:
+      accessLogs.enabled: false
+    asserts:
+      - hasDocuments: { count: 0 }

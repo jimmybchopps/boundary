@@ -1,0 +1,110 @@
+suite: infrastructure ConfigMap (ingress.gateways.<gateway>.infrastructure)
+templates:
+  - templates/istio/ingress-infrastructure.yaml
+tests:
+  - it: the defaults
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: ConfigMap }
+      - equal: { path: metadata.name, value: https-infrastructure }
+      - equal: { path: metadata.namespace, value: ingress-gateway }
+      - equal: { path: metadata.annotations, value: { boundary.posture.dev/rule: ingress.gateways.https.infrastructure } }
+      - equal:
+          path: data.deployment
+          value: |
+            spec:
+              replicas: 2
+              template:
+                spec:
+                  securityContext:
+                    seccompProfile:
+                      type: RuntimeDefault
+                  topologySpreadConstraints:
+                  - labelSelector:
+                      matchLabels:
+                        gateway.networking.k8s.io/gateway-name: https
+                    maxSkew: 1
+                    topologyKey: kubernetes.io/hostname
+                    whenUnsatisfiable: ScheduleAnyway
+      - equal:
+          path: data.podDisruptionBudget
+          value: |
+            spec:
+              minAvailable: 1
+      - notExists: { path: data.service }
+      - notExists: { path: data.horizontalPodAutoscaler }
+
+  - it: autoscaling renders an HPA and leaves replicas to it
+    set:
+      ingress.gateways.https.infrastructure.autoscaling: { enabled: true, minReplicas: 3, maxReplicas: 8 }
+    asserts:
+      - equal:
+          path: data.horizontalPodAutoscaler
+          value: |
+            spec:
+              maxReplicas: 8
+              minReplicas: 3
+      - notMatchRegex: { path: data.deployment, pattern: replicas }
+
+  - it: nodeSelector, tolerations, and resources patch the pod and the istio-proxy container
+    set:
+      ingress.gateways.https.infrastructure:
+        replicas: 3
+        topologySpread: false
+        nodeSelector: { node.example.mil/edge: "true" }
+        tolerations: [{ key: edge, operator: Exists, effect: NoSchedule }]
+        resources:
+          requests: { cpu: 100m, memory: 128Mi }
+          limits: { memory: 512Mi }
+    asserts:
+      - equal:
+          path: data.deployment
+          value: |
+            spec:
+              replicas: 3
+              template:
+                spec:
+                  containers:
+                  - name: istio-proxy
+                    resources:
+                      limits:
+                        memory: 512Mi
+                      requests:
+                        cpu: 100m
+                        memory: 128Mi
+                  nodeSelector:
+                    node.example.mil/edge: "true"
+                  securityContext:
+                    seccompProfile:
+                      type: RuntimeDefault
+                  tolerations:
+                  - effect: NoSchedule
+                    key: edge
+                    operator: Exists
+
+  - it: service annotations go on the Service only
+    set:
+      ingress.gateways.https.service.annotations: { service.beta.kubernetes.io/aws-load-balancer-scheme: internal }
+    asserts:
+      - equal:
+          path: data.service
+          value: |
+            metadata:
+              annotations:
+                service.beta.kubernetes.io/aws-load-balancer-scheme: internal
+
+  - it: a percentage minAvailable is kept as is
+    set:
+      ingress.gateways.https.infrastructure.podDisruptionBudget.minAvailable: 50%
+    asserts:
+      - equal:
+          path: data.podDisruptionBudget
+          value: |
+            spec:
+              minAvailable: 50%
+
+  - it: one ConfigMap per enabled gateway
+    set:
+      ingress.gateways.tls-passthrough.enabled: true
+    asserts:
+      - hasDocuments: { count: 2 }

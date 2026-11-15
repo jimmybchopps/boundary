@@ -2,9 +2,9 @@
 # boundary e2e tests on k3d: allowed traffic connects, refused traffic doesn't.
 #
 # Setup order (MESH=istio), as on a real cluster (CLAUDE.md, prerequisites):
-#   cluster, the Gateway API CRDs (standard), Istio ambient (platform k3d), the gateway
-#   namespaces in the mesh with their posture releases; then each scenario installs this chart
-#   and removes it afterwards.
+#   cluster, the Gateway API CRDs (standard), Istio ambient, the gateway namespaces in the
+#   mesh with their posture releases; then each scenario installs this chart and removes it
+#   afterwards. Needs Docker and openssl (the ingress scenarios' certificates).
 #
 # Usage: test/e2e/run.sh <istio> [scenario...]
 #   Normally run through `make e2e MESH=istio`, which installs the pinned tools, downloads the
@@ -40,12 +40,15 @@ ISTIOCTL=${ISTIOCTL:-istioctl}
 : "${GATEWAY_API_CRDS:?set GATEWAY_API_CRDS (make e2e sets it)}"
 : "${POSTURE_CHART:?set POSTURE_CHART (make e2e sets it)}"
 : "${POLICY_CRD:?set POLICY_CRD (make e2e sets it)}"
-export MESH HERE ROOT CLUSTER K3D KUBECTL HELM ISTIOCTL
+# The run's CA and certificates (lib.sh, make_ca and make_cert); removed on exit.
+CERTS=$(mktemp -d)
+export MESH HERE ROOT CLUSTER K3D KUBECTL HELM ISTIOCTL CERTS
 
 # shellcheck source=test/e2e/lib.sh
 source "$HERE/lib.sh"
 
 teardown() {
+  rm -rf "$CERTS"
   if [[ ${E2E_KEEP:-0} == 1 ]]; then
     log "keeping cluster ${CLUSTER} (E2E_KEEP=1); delete it with: $K3D cluster delete ${CLUSTER}"
   else
@@ -67,7 +70,9 @@ fi
 
 scenarios=("$@")
 if [[ ${#scenarios[@]} -eq 0 ]]; then
-  scenarios=(mtls-strict mtls-permissive)
+  scenarios=(mtls-strict mtls-permissive
+    ingress-https ingress-tls-settings ingress-cert-rotation ingress-passthrough ingress-tcp
+    ingress-infrastructure)
 fi
 for s in "${scenarios[@]}"; do
   run_scenario "$s"

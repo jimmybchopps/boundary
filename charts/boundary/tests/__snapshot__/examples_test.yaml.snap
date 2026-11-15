@@ -14,6 +14,142 @@ deny-all:
       namespace: istio-system
     spec: {}
   2: |
+    apiVersion: gateway.networking.k8s.io/v1
+    kind: Gateway
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: ingress.gateways.https
+        networking.istio.io/service-type: LoadBalancer
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: https
+      namespace: ingress-gateway
+    spec:
+      gatewayClassName: istio
+      infrastructure:
+        parametersRef:
+          group: ""
+          kind: ConfigMap
+          name: https-infrastructure
+      listeners:
+        - allowedRoutes:
+            namespaces:
+              from: Same
+          hostname: '*.apps.example.mil'
+          name: http
+          port: 80
+          protocol: HTTP
+        - allowedRoutes:
+            namespaces:
+              from: Selector
+              selector:
+                matchLabels:
+                  ingress.boundary.posture.dev/https: "true"
+          hostname: '*.apps.example.mil'
+          name: https
+          port: 443
+          protocol: HTTPS
+          tls:
+            certificateRefs:
+              - group: ""
+                kind: Secret
+                name: apps-tls
+            mode: Terminate
+  3: |
+    apiVersion: v1
+    data:
+      deployment: |
+        spec:
+          replicas: 2
+          template:
+            spec:
+              securityContext:
+                seccompProfile:
+                  type: RuntimeDefault
+              topologySpreadConstraints:
+              - labelSelector:
+                  matchLabels:
+                    gateway.networking.k8s.io/gateway-name: https
+                maxSkew: 1
+                topologyKey: kubernetes.io/hostname
+                whenUnsatisfiable: ScheduleAnyway
+      podDisruptionBudget: |
+        spec:
+          minAvailable: 1
+    kind: ConfigMap
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: ingress.gateways.https.infrastructure
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: https-infrastructure
+      namespace: ingress-gateway
+  4: |
+    apiVersion: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: ingress.gateways.https.listeners.http.redirectToHTTPS
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: redirect-http-to-https-https
+      namespace: ingress-gateway
+    spec:
+      parentRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: https
+          sectionName: http
+      rules:
+        - filters:
+            - requestRedirect:
+                scheme: https
+                statusCode: 301
+              type: RequestRedirect
+  5: |
+    apiVersion: networking.istio.io/v1alpha3
+    kind: EnvoyFilter
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: tls
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: tls-https
+      namespace: ingress-gateway
+    spec:
+      configPatches:
+        - applyTo: FILTER_CHAIN
+          match:
+            context: GATEWAY
+            listener:
+              portNumber: 443
+          patch:
+            operation: MERGE
+            value:
+              transport_socket:
+                name: envoy.transport_sockets.tls
+                typed_config:
+                  '@type': type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+                  common_tls_context:
+                    tls_params:
+                      tls_maximum_protocol_version: TLSv1_3
+                      tls_minimum_protocol_version: TLSv1_2
+      workloadSelector:
+        labels:
+          gateway.networking.k8s.io/gateway-name: https
+  6: |
     apiVersion: security.istio.io/v1
     kind: PeerAuthentication
     metadata:
@@ -29,8 +165,346 @@ deny-all:
     spec:
       mtls:
         mode: STRICT
+  7: |
+    apiVersion: telemetry.istio.io/v1
+    kind: Telemetry
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: accessLogs
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: access-logs-https
+      namespace: ingress-gateway
+    spec:
+      accessLogging:
+        - providers:
+            - name: envoy
+      targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: https
 full:
   1: |
+    apiVersion: gateway.networking.k8s.io/v1
+    kind: Gateway
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: ingress.gateways.https
+        networking.istio.io/service-type: LoadBalancer
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: https
+      namespace: ingress-gateway
+    spec:
+      gatewayClassName: istio
+      infrastructure:
+        parametersRef:
+          group: ""
+          kind: ConfigMap
+          name: https-infrastructure
+      listeners:
+        - allowedRoutes:
+            namespaces:
+              from: Same
+          hostname: '*.apps.example.mil'
+          name: http
+          port: 80
+          protocol: HTTP
+        - allowedRoutes:
+            namespaces:
+              from: Selector
+              selector:
+                matchLabels:
+                  ingress.boundary.posture.dev/https: "true"
+          hostname: '*.apps.example.mil'
+          name: https
+          port: 443
+          protocol: HTTPS
+          tls:
+            certificateRefs:
+              - group: ""
+                kind: Secret
+                name: apps-tls
+            mode: Terminate
+        - allowedRoutes:
+            namespaces:
+              from: Selector
+              selector:
+                matchLabels:
+                  ingress.boundary.posture.dev/https: "true"
+          hostname: '*.internal.example.mil'
+          name: internal
+          port: 443
+          protocol: HTTPS
+          tls:
+            certificateRefs:
+              - group: ""
+                kind: Secret
+                name: internal-tls
+            mode: Terminate
+  2: |
+    apiVersion: gateway.networking.k8s.io/v1
+    kind: Gateway
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: ingress.gateways.tcp
+        networking.istio.io/service-type: LoadBalancer
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: tcp
+      namespace: ingress-gateway
+    spec:
+      gatewayClassName: istio
+      infrastructure:
+        parametersRef:
+          group: ""
+          kind: ConfigMap
+          name: tcp-infrastructure
+      listeners:
+        - allowedRoutes:
+            namespaces:
+              from: Selector
+              selector:
+                matchLabels:
+                  kubernetes.io/metadata.name: databases
+          name: postgres
+          port: 5432
+          protocol: TCP
+  3: |
+    apiVersion: gateway.networking.k8s.io/v1
+    kind: Gateway
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: ingress.gateways.tls-passthrough
+        networking.istio.io/service-type: LoadBalancer
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: tls-passthrough
+      namespace: ingress-gateway
+    spec:
+      gatewayClassName: istio
+      infrastructure:
+        parametersRef:
+          group: ""
+          kind: ConfigMap
+          name: tls-passthrough-infrastructure
+      listeners:
+        - allowedRoutes:
+            namespaces:
+              from: Selector
+              selector:
+                matchLabels:
+                  ingress.boundary.posture.dev/tls-passthrough: "true"
+          hostname: '*.passthrough.example.mil'
+          name: tls
+          port: 443
+          protocol: TLS
+          tls:
+            mode: Passthrough
+  4: |
+    apiVersion: v1
+    data:
+      deployment: |
+        spec:
+          template:
+            spec:
+              containers:
+              - name: istio-proxy
+                resources:
+                  requests:
+                    cpu: 200m
+                    memory: 256Mi
+              securityContext:
+                seccompProfile:
+                  type: RuntimeDefault
+              topologySpreadConstraints:
+              - labelSelector:
+                  matchLabels:
+                    gateway.networking.k8s.io/gateway-name: https
+                maxSkew: 1
+                topologyKey: kubernetes.io/hostname
+                whenUnsatisfiable: ScheduleAnyway
+      horizontalPodAutoscaler: |
+        spec:
+          maxReplicas: 6
+          minReplicas: 2
+      podDisruptionBudget: |
+        spec:
+          minAvailable: 1
+      service: |
+        metadata:
+          annotations:
+            service.beta.kubernetes.io/aws-load-balancer-scheme: internal
+    kind: ConfigMap
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: ingress.gateways.https.infrastructure
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: https-infrastructure
+      namespace: ingress-gateway
+  5: |
+    apiVersion: v1
+    data:
+      deployment: |
+        spec:
+          replicas: 2
+          template:
+            spec:
+              securityContext:
+                seccompProfile:
+                  type: RuntimeDefault
+              topologySpreadConstraints:
+              - labelSelector:
+                  matchLabels:
+                    gateway.networking.k8s.io/gateway-name: tcp
+                maxSkew: 1
+                topologyKey: kubernetes.io/hostname
+                whenUnsatisfiable: ScheduleAnyway
+      podDisruptionBudget: |
+        spec:
+          minAvailable: 1
+    kind: ConfigMap
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: ingress.gateways.tcp.infrastructure
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: tcp-infrastructure
+      namespace: ingress-gateway
+  6: |
+    apiVersion: v1
+    data:
+      deployment: |
+        spec:
+          replicas: 2
+          template:
+            spec:
+              securityContext:
+                seccompProfile:
+                  type: RuntimeDefault
+              topologySpreadConstraints:
+              - labelSelector:
+                  matchLabels:
+                    gateway.networking.k8s.io/gateway-name: tls-passthrough
+                maxSkew: 1
+                topologyKey: kubernetes.io/hostname
+                whenUnsatisfiable: ScheduleAnyway
+      podDisruptionBudget: |
+        spec:
+          minAvailable: 1
+    kind: ConfigMap
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: ingress.gateways.tls-passthrough.infrastructure
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: tls-passthrough-infrastructure
+      namespace: ingress-gateway
+  7: |
+    apiVersion: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: ingress.gateways.https.listeners.http.redirectToHTTPS
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: redirect-http-to-https-https
+      namespace: ingress-gateway
+    spec:
+      parentRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: https
+          sectionName: http
+      rules:
+        - filters:
+            - requestRedirect:
+                scheme: https
+                statusCode: 301
+              type: RequestRedirect
+  8: |
+    apiVersion: networking.istio.io/v1alpha3
+    kind: EnvoyFilter
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: tls, ingress.gateways.https.listeners.internal.tls
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: tls-https
+      namespace: ingress-gateway
+    spec:
+      configPatches:
+        - applyTo: FILTER_CHAIN
+          match:
+            context: GATEWAY
+            listener:
+              filterChain:
+                sni: '*.apps.example.mil'
+              portNumber: 443
+          patch:
+            operation: MERGE
+            value:
+              transport_socket:
+                name: envoy.transport_sockets.tls
+                typed_config:
+                  '@type': type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+                  common_tls_context:
+                    tls_params:
+                      cipher_suites:
+                        - ECDHE-ECDSA-AES256-GCM-SHA384
+                        - ECDHE-RSA-AES256-GCM-SHA384
+                      tls_maximum_protocol_version: TLSv1_3
+                      tls_minimum_protocol_version: TLSv1_2
+        - applyTo: FILTER_CHAIN
+          match:
+            context: GATEWAY
+            listener:
+              filterChain:
+                sni: '*.internal.example.mil'
+              portNumber: 443
+          patch:
+            operation: MERGE
+            value:
+              transport_socket:
+                name: envoy.transport_sockets.tls
+                typed_config:
+                  '@type': type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+                  common_tls_context:
+                    tls_params:
+                      tls_maximum_protocol_version: TLSv1_3
+                      tls_minimum_protocol_version: TLSv1_3
+      workloadSelector:
+        labels:
+          gateway.networking.k8s.io/gateway-name: https
+  9: |
     apiVersion: security.istio.io/v1
     kind: PeerAuthentication
     metadata:
@@ -46,8 +520,207 @@ full:
     spec:
       mtls:
         mode: STRICT
+  10: |
+    apiVersion: telemetry.istio.io/v1
+    kind: Telemetry
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: accessLogs
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: access-logs-https
+      namespace: ingress-gateway
+    spec:
+      accessLogging:
+        - providers:
+            - name: envoy
+      targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: https
+  11: |
+    apiVersion: telemetry.istio.io/v1
+    kind: Telemetry
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: accessLogs
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: access-logs-tcp
+      namespace: ingress-gateway
+    spec:
+      accessLogging:
+        - providers:
+            - name: envoy
+      targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: tcp
+  12: |
+    apiVersion: telemetry.istio.io/v1
+    kind: Telemetry
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: accessLogs
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: access-logs-tls-passthrough
+      namespace: ingress-gateway
+    spec:
+      accessLogging:
+        - providers:
+            - name: envoy
+      targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: tls-passthrough
 minimal:
   1: |
+    apiVersion: gateway.networking.k8s.io/v1
+    kind: Gateway
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: ingress.gateways.https
+        networking.istio.io/service-type: LoadBalancer
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: https
+      namespace: ingress-gateway
+    spec:
+      gatewayClassName: istio
+      infrastructure:
+        parametersRef:
+          group: ""
+          kind: ConfigMap
+          name: https-infrastructure
+      listeners:
+        - allowedRoutes:
+            namespaces:
+              from: Same
+          hostname: '*.apps.example.mil'
+          name: http
+          port: 80
+          protocol: HTTP
+        - allowedRoutes:
+            namespaces:
+              from: Selector
+              selector:
+                matchLabels:
+                  ingress.boundary.posture.dev/https: "true"
+          hostname: '*.apps.example.mil'
+          name: https
+          port: 443
+          protocol: HTTPS
+          tls:
+            certificateRefs:
+              - group: ""
+                kind: Secret
+                name: apps-tls
+            mode: Terminate
+  2: |
+    apiVersion: v1
+    data:
+      deployment: |
+        spec:
+          replicas: 2
+          template:
+            spec:
+              securityContext:
+                seccompProfile:
+                  type: RuntimeDefault
+              topologySpreadConstraints:
+              - labelSelector:
+                  matchLabels:
+                    gateway.networking.k8s.io/gateway-name: https
+                maxSkew: 1
+                topologyKey: kubernetes.io/hostname
+                whenUnsatisfiable: ScheduleAnyway
+      podDisruptionBudget: |
+        spec:
+          minAvailable: 1
+    kind: ConfigMap
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: ingress.gateways.https.infrastructure
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: https-infrastructure
+      namespace: ingress-gateway
+  3: |
+    apiVersion: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: ingress.gateways.https.listeners.http.redirectToHTTPS
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: redirect-http-to-https-https
+      namespace: ingress-gateway
+    spec:
+      parentRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: https
+          sectionName: http
+      rules:
+        - filters:
+            - requestRedirect:
+                scheme: https
+                statusCode: 301
+              type: RequestRedirect
+  4: |
+    apiVersion: networking.istio.io/v1alpha3
+    kind: EnvoyFilter
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: tls
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: tls-https
+      namespace: ingress-gateway
+    spec:
+      configPatches:
+        - applyTo: FILTER_CHAIN
+          match:
+            context: GATEWAY
+            listener:
+              portNumber: 443
+          patch:
+            operation: MERGE
+            value:
+              transport_socket:
+                name: envoy.transport_sockets.tls
+                typed_config:
+                  '@type': type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+                  common_tls_context:
+                    tls_params:
+                      tls_maximum_protocol_version: TLSv1_3
+                      tls_minimum_protocol_version: TLSv1_2
+      workloadSelector:
+        labels:
+          gateway.networking.k8s.io/gateway-name: https
+  5: |
     apiVersion: security.istio.io/v1
     kind: PeerAuthentication
     metadata:
@@ -63,8 +736,165 @@ minimal:
     spec:
       mtls:
         mode: STRICT
+  6: |
+    apiVersion: telemetry.istio.io/v1
+    kind: Telemetry
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: accessLogs
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: access-logs-https
+      namespace: ingress-gateway
+    spec:
+      accessLogging:
+        - providers:
+            - name: envoy
+      targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: https
 permissive:
   1: |
+    apiVersion: gateway.networking.k8s.io/v1
+    kind: Gateway
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: ingress.gateways.https
+        networking.istio.io/service-type: LoadBalancer
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: https
+      namespace: ingress-gateway
+    spec:
+      gatewayClassName: istio
+      infrastructure:
+        parametersRef:
+          group: ""
+          kind: ConfigMap
+          name: https-infrastructure
+      listeners:
+        - allowedRoutes:
+            namespaces:
+              from: Same
+          hostname: '*.apps.example.mil'
+          name: http
+          port: 80
+          protocol: HTTP
+        - allowedRoutes:
+            namespaces:
+              from: Selector
+              selector:
+                matchLabels:
+                  ingress.boundary.posture.dev/https: "true"
+          hostname: '*.apps.example.mil'
+          name: https
+          port: 443
+          protocol: HTTPS
+          tls:
+            certificateRefs:
+              - group: ""
+                kind: Secret
+                name: apps-tls
+            mode: Terminate
+  2: |
+    apiVersion: v1
+    data:
+      deployment: |
+        spec:
+          replicas: 2
+          template:
+            spec:
+              securityContext:
+                seccompProfile:
+                  type: RuntimeDefault
+              topologySpreadConstraints:
+              - labelSelector:
+                  matchLabels:
+                    gateway.networking.k8s.io/gateway-name: https
+                maxSkew: 1
+                topologyKey: kubernetes.io/hostname
+                whenUnsatisfiable: ScheduleAnyway
+      podDisruptionBudget: |
+        spec:
+          minAvailable: 1
+    kind: ConfigMap
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: ingress.gateways.https.infrastructure
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: https-infrastructure
+      namespace: ingress-gateway
+  3: |
+    apiVersion: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: ingress.gateways.https.listeners.http.redirectToHTTPS
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: redirect-http-to-https-https
+      namespace: ingress-gateway
+    spec:
+      parentRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: https
+          sectionName: http
+      rules:
+        - filters:
+            - requestRedirect:
+                scheme: https
+                statusCode: 301
+              type: RequestRedirect
+  4: |
+    apiVersion: networking.istio.io/v1alpha3
+    kind: EnvoyFilter
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: tls
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: tls-https
+      namespace: ingress-gateway
+    spec:
+      configPatches:
+        - applyTo: FILTER_CHAIN
+          match:
+            context: GATEWAY
+            listener:
+              portNumber: 443
+          patch:
+            operation: MERGE
+            value:
+              transport_socket:
+                name: envoy.transport_sockets.tls
+                typed_config:
+                  '@type': type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+                  common_tls_context:
+                    tls_params:
+                      tls_maximum_protocol_version: TLSv1_3
+                      tls_minimum_protocol_version: TLSv1_2
+      workloadSelector:
+        labels:
+          gateway.networking.k8s.io/gateway-name: https
+  5: |
     apiVersion: security.istio.io/v1
     kind: PeerAuthentication
     metadata:
@@ -80,3 +910,24 @@ permissive:
     spec:
       mtls:
         mode: PERMISSIVE
+  6: |
+    apiVersion: telemetry.istio.io/v1
+    kind: Telemetry
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: accessLogs
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: access-logs-https
+      namespace: ingress-gateway
+    spec:
+      accessLogging:
+        - providers:
+            - name: envoy
+      targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: https

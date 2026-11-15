@@ -17,13 +17,21 @@ Shape:
     gateways:                             # enabled only, sorted by name
       - name, path                        # path: ingress.gateways.<name>
         service: { type, annotations, loadBalancerIP }    # defaults filled in
-        infrastructure: { ... }           # boundary.infrastructureDefaults, then the values
+        infrastructure: { ... }           # boundary.infrastructure's defaults, then the values
         listeners:                        # enabled only, sorted by name
           - name, path, port, protocol, hostname
-            certificates, tls             # HTTPS only; tls is the chart-wide tls with the
-                                          # listener's overrides applied
+            certificates, tls, tlsOverride  # HTTPS only; tls is the chart-wide tls with the
+                                          # listener's overrides applied (no cipherSuites
+                                          # when minVersion is TLSv1_3); tlsOverride: whether
+                                          # the listener sets tls
             redirectToHTTPS               # HTTP only
             namespace                     # TCP only
+        routeLabel                        # ingress.boundary.posture.dev/<gateway>
+        infrastructureName, tlsName, redirectName, accessLogsName   # object names
+        redirectPort                      # the one HTTPS port (0: no HTTPS listener)
+        tlsPatches:                       # one per HTTPS listener, for the EnvoyFilter
+          - { listener, path, port, sni, tls, override }   # sni: the hostname when HTTPS
+                                          # listeners share the port, else ""
   egress:
     namespace: egress-gateway
     default: default                      # the enabled gateway with default: true ("" if none)
@@ -61,7 +69,7 @@ formatting them with printf.
       "minVersion" ($tlsValues.minVersion | default "TLSv1_2")
       "maxVersion" ($tlsValues.maxVersion | default "TLSv1_3")
       "cipherSuites" ($tlsValues.cipherSuites | default list) -}}
-{{- include "boundary.checkTLS" (dict "tls" $tls "path" "tls") -}}
+{{- include "boundary.checkTLS" (dict "tls" $tls "path" "tls" "own" $tlsValues) -}}
 
 {{- /* Ingress gateways. */ -}}
 {{- $ingressValues := $v.ingress | default dict -}}
@@ -79,19 +87,32 @@ formatting them with printf.
       {{- $listeners = append $listeners $out -}}
     {{- end -}}
   {{- end -}}
+  {{- $service := mustMergeOverwrite
+        (dict "type" "LoadBalancer" "annotations" dict "loadBalancerIP" "")
+        (deepCopy ($gateway.service | default dict)) -}}
+  {{- if and $service.loadBalancerIP (ne $service.type "LoadBalancer") -}}
+    {{- fail (printf "boundary: %s.service: loadBalancerIP applies only to type LoadBalancer; type is %s" $gatewayPath $service.type) -}}
+  {{- end -}}
+  {{- $infrastructure := include "boundary.infrastructure" (dict "values" $gateway.infrastructure "path" (printf "%s.infrastructure" $gatewayPath)) | fromJson -}}
   {{- if eq (include "boundary.enabled" $gateway) "true" -}}
     {{- if not $listeners -}}
       {{- fail (printf "boundary: %s: an enabled gateway needs at least one enabled listener" $gatewayPath) -}}
     {{- end -}}
-    {{- $service := mustMergeOverwrite
-          (dict "type" "LoadBalancer" "annotations" dict "loadBalancerIP" "")
-          (deepCopy ($gateway.service | default dict)) -}}
+    {{- $ports := include "boundary.listenerPorts" (dict "listeners" $listeners "path" $gatewayPath) | fromJson -}}
+    {{- $name := include "boundary.name" (dict "name" $gatewayName "path" $gatewayPath) -}}
     {{- $ingressGateways = append $ingressGateways (dict
-          "name" (include "boundary.name" (dict "name" $gatewayName "path" $gatewayPath))
+          "name" $name
           "path" $gatewayPath
           "service" $service
-          "infrastructure" (include "boundary.infrastructure" $gateway.infrastructure | fromJson)
-          "listeners" $listeners) -}}
+          "infrastructure" $infrastructure
+          "listeners" $listeners
+          "routeLabel" (printf "ingress.boundary.posture.dev/%s" $name)
+          "infrastructureName" (include "boundary.name" (dict "name" (printf "%s-infrastructure" $name) "path" $gatewayPath))
+          "tlsName" (include "boundary.name" (dict "name" (printf "tls-%s" $name) "path" $gatewayPath))
+          "redirectName" (include "boundary.name" (dict "name" (printf "redirect-http-to-https-%s" $name) "path" $gatewayPath))
+          "accessLogsName" (include "boundary.name" (dict "name" (printf "access-logs-%s" $name) "path" $gatewayPath))
+          "redirectPort" $ports.redirectPort
+          "tlsPatches" $ports.tlsPatches) -}}
   {{- end -}}
 {{- end -}}
 
@@ -120,7 +141,7 @@ formatting them with printf.
           "path" $gatewayPath
           "default" $isDefault
           "exitNodes" ($gateway.exitNodes | default dict)
-          "infrastructure" (include "boundary.infrastructure" $gateway.infrastructure | fromJson)
+          "infrastructure" (include "boundary.infrastructure" (dict "values" $gateway.infrastructure "path" (printf "%s.infrastructure" $gatewayPath)) | fromJson)
           "allowedHosts" $hosts) -}}
   {{- end -}}
 {{- end -}}
@@ -182,9 +203,12 @@ Usage: include "boundary.listener" (dict "listener" $l "name" "https"
         "minVersion" ($override.minVersion | default .tls.minVersion)
         "maxVersion" ($override.maxVersion | default .tls.maxVersion)
         "cipherSuites" (ternary $override.cipherSuites .tls.cipherSuites (hasKey $override "cipherSuites")) -}}
-  {{- include "boundary.checkTLS" (dict "tls" $tls "path" (printf "%s.tls" $path)) -}}
+  {{- include "boundary.checkTLS" (dict "tls" $tls "path" (printf "%s.tls" $path) "own" $override) -}}
+  {{- /* TLS 1.3 ciphers aren't configurable: inherited TLS 1.2 ciphers don't apply. */ -}}
+  {{- if eq $tls.minVersion "TLSv1_3" -}}{{- $_ := set $tls "cipherSuites" list -}}{{- end -}}
   {{- $_ := set .out "certificates" $l.certificates -}}
   {{- $_ := set .out "tls" $tls -}}
+  {{- $_ := set .out "tlsOverride" (hasKey $l "tls") -}}
 {{- else -}}
   {{- if hasKey $l "tls" -}}
     {{- fail (printf "boundary: %s: tls applies only to HTTPS listeners, which terminate TLS; a %s listener %s" $path $protocol $what) -}}
@@ -252,18 +276,23 @@ Usage: include "boundary.allowedHost" (dict "entry" $e "name" "github" "gateway"
 {{- end -}}
 
 {{/*
-Fails if minVersion is above maxVersion.
-Usage: include "boundary.checkTLS" (dict "tls" $tls "path" "tls")
+Fails if minVersion is above maxVersion, or if this level ("own": the values at that path) sets
+cipherSuites while the effective minVersion is TLSv1_3 (they would never be used).
+Usage: include "boundary.checkTLS" (dict "tls" $effective "path" "tls" "own" $values)
 */}}
 {{- define "boundary.checkTLS" -}}
 {{- if gt .tls.minVersion .tls.maxVersion -}}
 {{- fail (printf "boundary: %s: minVersion %s is above maxVersion %s" .path .tls.minVersion .tls.maxVersion) -}}
 {{- end -}}
+{{- if and (eq .tls.minVersion "TLSv1_3") (.own | default dict).cipherSuites -}}
+{{- fail (printf "boundary: %s: cipherSuites apply only to TLS 1.2, and minVersion is TLSv1_3 (TLS 1.3 ciphers aren't configurable in Envoy)" .path) -}}
+{{- end -}}
 {{- end -}}
 
 {{/*
-A gateway's infrastructure settings, as JSON: these defaults, then the values given.
-Usage: include "boundary.infrastructure" $gateway.infrastructure | fromJson
+A gateway's infrastructure settings, as JSON: these defaults, then the values given, checked.
+Usage: include "boundary.infrastructure" (dict "values" $gateway.infrastructure
+         "path" "ingress.gateways.https.infrastructure") | fromJson
 */}}
 {{- define "boundary.infrastructure" -}}
 {{- $defaults := dict
@@ -274,5 +303,76 @@ Usage: include "boundary.infrastructure" $gateway.infrastructure | fromJson
       "nodeSelector" dict
       "tolerations" list
       "resources" dict -}}
-{{- toJson (mustMergeOverwrite $defaults (deepCopy (. | default dict))) -}}
+{{- $i := mustMergeOverwrite $defaults (deepCopy (.values | default dict)) -}}
+{{- $autoscaling := $i.autoscaling -}}
+{{- if and $autoscaling.enabled (gt (int $autoscaling.minReplicas) (int $autoscaling.maxReplicas)) -}}
+{{- fail (printf "boundary: %s.autoscaling: minReplicas %d is above maxReplicas %d" .path (int $autoscaling.minReplicas) (int $autoscaling.maxReplicas)) -}}
+{{- end -}}
+{{- $minAvailable := $i.podDisruptionBudget.minAvailable -}}
+{{- if or (kindIs "int" $minAvailable) (kindIs "int64" $minAvailable) (kindIs "float64" $minAvailable) -}}
+{{- $replicas := ternary (int $autoscaling.minReplicas) (int $i.replicas) (eq (toString $autoscaling.enabled) "true") -}}
+{{- if ge (int $minAvailable) $replicas -}}
+{{- fail (printf "boundary: %s.podDisruptionBudget: minAvailable %d must be below the replica count (%d), or a node running the gateway could never be drained" .path (int $minAvailable) $replicas) -}}
+{{- end -}}
+{{- end -}}
+{{- toJson $i -}}
+{{- end -}}
+
+{{/*
+Checks the ports an enabled gateway's listeners share, and returns as JSON:
+  redirectPort: the one HTTPS port, or 0 if the gateway has none
+  tlsPatches:   one per HTTPS listener: { listener, path, port, sni, tls }; sni is the hostname
+                when another HTTPS listener shares the port, "" otherwise
+Usage: include "boundary.listenerPorts" (dict "listeners" $listeners "path" $gatewayPath) | fromJson
+*/}}
+{{- define "boundary.listenerPorts" -}}
+{{- $path := .path -}}
+{{- $byPort := dict -}}
+{{- range .listeners -}}
+  {{- $key := toString .port -}}
+  {{- $_ := set $byPort $key (append (get $byPort $key | default list) .) -}}
+{{- end -}}
+{{- $httpsPorts := list -}}
+{{- $tlsPatches := list -}}
+{{- range $port, $group := $byPort -}}
+  {{- $first := index $group 0 -}}
+  {{- $hostnames := dict -}}
+  {{- range $group -}}
+    {{- if ne .protocol $first.protocol -}}
+      {{- fail (printf "boundary: %s: listeners %s and %s share port %s with protocols %s and %s" $path $first.name .name $port $first.protocol .protocol) -}}
+    {{- end -}}
+    {{- if hasKey $hostnames .hostname -}}
+      {{- if eq .protocol "TCP" -}}
+        {{- fail (printf "boundary: %s: TCP listeners %s and %s share port %s; each TCP service needs its own port" $path (get $hostnames .hostname) .name $port) -}}
+      {{- end -}}
+      {{- fail (printf "boundary: %s: listeners %s and %s share port %s and hostname %q; give each its own hostname" $path (get $hostnames .hostname) .name $port .hostname) -}}
+    {{- end -}}
+    {{- $_ := set $hostnames .hostname .name -}}
+  {{- end -}}
+  {{- if eq $first.protocol "HTTPS" -}}
+    {{- $httpsPorts = append $httpsPorts (int $port) -}}
+    {{- $shared := gt (len $group) 1 -}}
+    {{- range $group -}}
+      {{- if and $shared (not .hostname) -}}
+        {{- fail (printf "boundary: %s: HTTPS listener %s shares port %s with other HTTPS listeners, so it needs a hostname (its TLS settings are matched by SNI)" $path .name $port) -}}
+      {{- end -}}
+      {{- $tlsPatches = append $tlsPatches (dict
+            "listener" .name "path" .path "port" .port
+            "sni" (ternary .hostname "" $shared) "tls" .tls "override" .tlsOverride) -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+{{- $redirectPort := 0 -}}
+{{- range .listeners -}}
+  {{- if .redirectToHTTPS -}}
+    {{- if not $httpsPorts -}}
+      {{- fail (printf "boundary: %s: redirectToHTTPS needs an HTTPS listener on the same gateway to redirect to" .path) -}}
+    {{- end -}}
+    {{- if gt (len $httpsPorts) 1 -}}
+      {{- fail (printf "boundary: %s: redirectToHTTPS needs one HTTPS port on the gateway; its HTTPS listeners use ports %s" .path (join ", " $httpsPorts)) -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+{{- if eq (len $httpsPorts) 1 -}}{{- $redirectPort = index $httpsPorts 0 -}}{{- end -}}
+{{- toJson (dict "redirectPort" $redirectPort "tlsPatches" $tlsPatches) -}}
 {{- end -}}

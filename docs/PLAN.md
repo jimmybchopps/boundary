@@ -14,7 +14,7 @@ Each phase ends with its acceptance criteria passing in CI.
       annotations), `values.yaml` documenting every key, `values.schema.json`, `_helpers.tpl`.
 - [x] Tooling pinned in a `Makefile` or `.tool-versions`: helm (3.14+ and 4), helm-unittest,
       kubeconform, k3d, kubectl, istioctl.
-- [ ] CI: lint, unit tests, kubeconform with Gateway API and Istio CRD schemas.
+- [x] CI: lint, unit tests, kubeconform with Gateway API and Istio CRD schemas.
 - [x] `_model.tpl`: normalize gateways, listeners, and `allowedHosts`, dropping disabled
       entries. Render failures, each naming the entry:
       - a `mesh` or `ingress.implementation` whose phase hasn't landed;
@@ -37,23 +37,23 @@ Each phase ends with its acceptance criteria passing in CI.
 
 ## Phase 2: Istio ingress gateways and TLS settings
 
-- [ ] A Gateway per enabled `ingress.gateways` entry; the defaults `https` (on),
+- [x] A Gateway per enabled `ingress.gateways` entry; the defaults `https` (on),
       `tls-passthrough` (off), and `tcp` (off) from CLAUDE.md.
-- [ ] `https`: HTTPS listeners with `certificateRefs` to Secrets in the ingress namespace; the
+- [x] `https`: HTTPS listeners with `certificateRefs` to Secrets in the ingress namespace; the
       HTTP listener's redirect HTTPRoute.
-- [ ] `tls-passthrough`: TLS listeners in Passthrough mode.
-- [ ] `tcp`: one listener per entry, restricted to its `namespace`.
-- [ ] Route attachment by the per-gateway label for `https` and `tls-passthrough`.
-- [ ] Infrastructure ConfigMap via `parametersRef`. Confirm which keys the pinned Istio version
+- [x] `tls-passthrough`: TLS listeners in Passthrough mode.
+- [x] `tcp`: one listener per entry, restricted to its `namespace`.
+- [x] Route attachment by the per-gateway label for `https` and `tls-passthrough`.
+- [x] Infrastructure ConfigMap via `parametersRef`. Confirm which keys the pinned Istio version
       supports and document them.
-- [ ] Gateway pod compliance: compare the Deployment Istio generates with the `policy` chart's
+- [x] Gateway pod compliance: compare the Deployment Istio generates with the `policy` chart's
       baked-in baseline and fill any gaps through the infrastructure ConfigMap. Record the
       result in the README.
-- [ ] TLS settings: the chart-wide `tls` with per-listener overrides, rendered as one EnvoyFilter
+- [x] TLS settings: the chart-wide `tls` with per-listener overrides, rendered as one EnvoyFilter
       per gateway as described in CLAUDE.md (port match, plus SNI match when listeners share a
       port).
-- [ ] `accessLogs` for each ingress gateway.
-- [ ] Unit tests for every listener type, override, and failure. e2e:
+- [x] `accessLogs` for each ingress gateway.
+- [x] Unit tests for every listener type, override, and failure. e2e:
       - a labeled namespace's HTTPRoute serves traffic through `https`;
       - an unlabeled namespace's HTTPRoute isn't accepted (route status shows it);
       - HTTP redirects to HTTPS;

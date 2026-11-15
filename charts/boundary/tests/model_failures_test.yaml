@@ -290,3 +290,140 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: 'boundary: ingress.gateways.https.listeners.https.tls: minVersion TLSv1_3 is above maxVersion TLSv1_2'
+
+  # Listeners sharing a port.
+
+  - it: listeners on one port with different protocols fail
+    set:
+      ingress.gateways.https.listeners.http.port: 443
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: ingress.gateways.https: listeners http and https share port 443 with protocols HTTP and HTTPS'
+
+  - it: listeners on one port with the same hostname fail
+    set:
+      ingress.gateways.https.listeners.https.hostname: "*.apps.example.mil"
+      ingress.gateways.https.listeners.internal:
+        { port: 443, protocol: HTTPS, hostname: "*.apps.example.mil", certificates: [internal-tls] }
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: ingress.gateways.https: listeners https and internal share port 443 and hostname "\*.apps.example.mil"; give each its own hostname'
+
+  - it: HTTPS listeners sharing a port each need a hostname
+    set:
+      ingress.gateways.https.listeners.internal:
+        { port: 443, protocol: HTTPS, hostname: "*.internal.example.mil", certificates: [internal-tls] }
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: ingress.gateways.https: HTTPS listener https shares port 443 with other HTTPS listeners, so it needs a hostname'
+
+  - it: two TCP listeners on one port fail
+    set:
+      ingress.gateways.tcp:
+        enabled: true
+        listeners:
+          a: { port: 5432, protocol: TCP, namespace: one }
+          b: { port: 5432, protocol: TCP, namespace: two }
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: ingress.gateways.tcp: TCP listeners a and b share port 5432; each TCP service needs its own port'
+
+  - it: a disabled listener doesn't share its port
+    set:
+      ingress.gateways.https.listeners.internal:
+        { enabled: false, port: 443, protocol: HTTPS, certificates: [internal-tls] }
+    asserts:
+      - notFailedTemplate: {}
+
+  # Redirects.
+
+  - it: redirectToHTTPS without an HTTPS listener fails
+    set:
+      ingress.gateways.https.listeners.https.enabled: false
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: ingress.gateways.https.listeners.http: redirectToHTTPS needs an HTTPS listener on the same gateway'
+
+  - it: redirectToHTTPS with HTTPS listeners on several ports fails
+    set:
+      ingress.gateways.https.listeners.admin: { port: 8443, protocol: HTTPS, certificates: [admin-tls] }
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: ingress.gateways.https.listeners.http: redirectToHTTPS needs one HTTPS port on the gateway; its HTTPS listeners use ports 443, 8443'
+
+  # Cipher suites under TLS 1.3.
+
+  - it: chart-wide cipherSuites with minVersion TLSv1_3 fail
+    set:
+      tls: { minVersion: TLSv1_3, cipherSuites: [ECDHE-RSA-AES256-GCM-SHA384] }
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: tls: cipherSuites apply only to TLS 1.2, and minVersion is TLSv1_3'
+
+  - it: a listener's cipherSuites with an effective minVersion TLSv1_3 fail
+    set:
+      tls.minVersion: TLSv1_3
+      ingress.gateways.https.listeners.https.tls: { cipherSuites: [ECDHE-RSA-AES256-GCM-SHA384] }
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: ingress.gateways.https.listeners.https.tls: cipherSuites apply only to TLS 1.2'
+
+  - it: inherited cipherSuites under a listener's TLSv1_3 are dropped, not an error
+    set:
+      tls.cipherSuites: [ECDHE-RSA-AES256-GCM-SHA384]
+      ingress.gateways.https.listeners.https.tls: { minVersion: TLSv1_3 }
+    asserts:
+      - notFailedTemplate: {}
+
+  # Infrastructure and service.
+
+  - it: autoscaling minReplicas above maxReplicas fails
+    set:
+      ingress.gateways.https.infrastructure.autoscaling: { enabled: true, minReplicas: 6, maxReplicas: 3 }
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: ingress.gateways.https.infrastructure.autoscaling: minReplicas 6 is above maxReplicas 3'
+
+  - it: minAvailable at the replica count fails
+    set:
+      ingress.gateways.https.infrastructure.replicas: 1
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: ingress.gateways.https.infrastructure.podDisruptionBudget: minAvailable 1 must be below the replica count \(1\)'
+
+  - it: under autoscaling, minAvailable is compared with minReplicas
+    set:
+      ingress.gateways.https.infrastructure:
+        replicas: 1
+        autoscaling: { enabled: true, minReplicas: 2, maxReplicas: 4 }
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: a percentage minAvailable isn't compared
+    set:
+      ingress.gateways.https.infrastructure:
+        replicas: 1
+        podDisruptionBudget: { minAvailable: 50% }
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: a disabled gateway's infrastructure is still checked
+    set:
+      ingress.gateways.tls-passthrough.infrastructure.replicas: 1
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: ingress.gateways.tls-passthrough.infrastructure.podDisruptionBudget'
+
+  - it: an egress gateway's infrastructure is checked too
+    set:
+      egress.gateways.default.infrastructure.replicas: 1
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: egress.gateways.default.infrastructure.podDisruptionBudget'
+
+  - it: loadBalancerIP with another service type fails
+    set:
+      ingress.gateways.https.service: { type: ClusterIP, loadBalancerIP: 10.0.0.5 }
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: ingress.gateways.https.service: loadBalancerIP applies only to type LoadBalancer; type is ClusterIP'
