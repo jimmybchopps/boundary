@@ -26,10 +26,10 @@ Each phase ends with its acceptance criteria passing in CI.
       - a `tcp` listener without `namespace`.
 - [x] Mesh-wide resources: `PeerAuthentication` (`mtls-strict` by default), the optional
       `deny-all`, annotations on everything.
-- [ ] `test/e2e/` harness: k3d, Gateway API CRDs v1.6 (standard), Istio ambient with
+- [x] `test/e2e/` harness: k3d, Gateway API CRDs v1.6 (standard), Istio ambient with
       `platform=k3d`, the two gateway namespaces created and enrolled in ambient, `posture`
       installed in each (exceptions only, until the profiles exist).
-- [ ] e2e: with STRICT, a pod outside the mesh can't reach a meshed pod; with PERMISSIVE it can.
+- [x] e2e: with STRICT, a pod outside the mesh can't reach a meshed pod; with PERMISSIVE it can.
 
 **Done when** the chart installs on the harness and the mTLS e2e passes.
 
