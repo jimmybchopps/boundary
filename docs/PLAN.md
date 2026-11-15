@@ -53,7 +53,7 @@ Each phase ends with its acceptance criteria passing in CI.
       per gateway as described in CLAUDE.md (port match, plus SNI match when listeners share a
       port).
 - [x] `accessLogs` for each ingress gateway.
-- [ ] Unit tests for every listener type, override, and failure. e2e:
+- [x] Unit tests for every listener type, override, and failure. e2e:
       - a labeled namespace's HTTPRoute serves traffic through `https`;
       - an unlabeled namespace's HTTPRoute isn't accepted (route status shows it);
       - HTTP redirects to HTTPS;
