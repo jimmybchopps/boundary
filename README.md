@@ -91,6 +91,14 @@ boundary's gateway and waypoint pods pass the `policy` chart's defaults, enforce
   [Gateway pod compliance](#gateway-pod-compliance)).
 - **`restrict-image-registries`**: the registry Istio's images come from (`docker.io/istio/` for
   the upstream images).
+- **`restrict-wildcard-rbac`**: `allowedRoles: [istiod-clusterrole-istio-system,
+  istio-reader-clusterrole-istio-system]`. The istiod chart's two ClusterRoles use `*`
+  (read-only access to every resource in Istio's own API groups and the Gateway API group, and
+  every verb on `ingresses/status`), so without this istiod's install is refused. Both names end
+  in istiod's namespace; with a revisioned or relocated istiod, check the names its chart
+  renders.
+- **`require-probes`** (audit by default) reports istiod, which has no liveness probe. It warns
+  and refuses nothing.
 - **`restrict-loadbalancer-services`**: `namespaces: [ingress-gateway]` (`ingress.namespace`),
   so the ingress gateways' LoadBalancer Services are allowed there and nowhere else.
 - **`restrict-route-hostnames`** (optional, policy 0.2.1 or later when turned on): list the

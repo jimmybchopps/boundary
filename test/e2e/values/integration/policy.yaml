@@ -14,6 +14,14 @@ policies:
   # gateway is ClusterIP, but a site's is a LoadBalancer (ingress.gateways.<gateway>.service).
   restrict-loadbalancer-services:
     namespaces: [ingress-gateway]
+  # Default on: no "*" in Roles and ClusterRoles. The upstream istiod chart's two ClusterRoles
+  # (named -<istiod's namespace>) use it: read-only "*" resources in Istio's own API groups and
+  # gateway.networking.k8s.io, and "*" verbs on ingresses/status. They're Istio's, set by its
+  # chart, so they're allowed by name.
+  restrict-wildcard-rbac:
+    allowedRoles:
+      - istiod-clusterrole-istio-system
+      - istio-reader-clusterrole-istio-system
   # Optional, turned on and enforced: a route may only claim hostnames under its own namespace
   # (shop -> *.shop.e2e.test). The ingress gateways' namespace is skipped: boundary's
   # redirect-http-to-https-<gateway> route has no hostnames, since it answers every hostname of
