@@ -14,7 +14,7 @@ Each phase ends with its acceptance criteria passing in CI.
       annotations), `values.yaml` documenting every key, `values.schema.json`, `_helpers.tpl`.
 - [x] Tooling pinned in a `Makefile` or `.tool-versions`: helm (3.14+ and 4), helm-unittest,
       kubeconform, k3d, kubectl, istioctl.
-- [ ] CI: lint, unit tests, kubeconform with Gateway API and Istio CRD schemas.
+- [x] CI: lint, unit tests, kubeconform with Gateway API and Istio CRD schemas.
 - [x] `_model.tpl`: normalize gateways, listeners, and `allowedHosts`, dropping disabled
       entries. Render failures, each naming the entry:
       - a `mesh` or `ingress.implementation` whose phase hasn't landed;
