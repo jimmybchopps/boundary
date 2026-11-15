@@ -1,0 +1,33 @@
+suite: AuthorizationPolicy deny-all (meshDefaultDeny)
+templates:
+  - templates/istio/deny-all.yaml
+tests:
+  - it: off by default
+    asserts:
+      - hasDocuments: { count: 0 }
+
+  - it: meshDefaultDeny renders an allow-nothing policy in the root namespace
+    set:
+      meshDefaultDeny: true
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isKind: { of: AuthorizationPolicy }
+      - isAPIVersion: { of: security.istio.io/v1 }
+      - equal: { path: metadata.name, value: deny-all }
+      - equal: { path: metadata.namespace, value: istio-system }
+      - equal: { path: metadata.annotations, value: { boundary.posture.dev/rule: meshDefaultDeny } }
+      - equal: { path: spec, value: {} }
+
+  - it: follows istio.rootNamespace
+    set:
+      meshDefaultDeny: true
+      istio.rootNamespace: mesh-root
+    asserts:
+      - equal: { path: metadata.namespace, value: mesh-root }
+
+  - it: is independent of mtls.mode
+    set:
+      meshDefaultDeny: true
+      mtls.mode: inherit
+    asserts:
+      - hasDocuments: { count: 1 }

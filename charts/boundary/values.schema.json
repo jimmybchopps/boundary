@@ -1,0 +1,226 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "boundary values",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "mesh": {
+      "description": "The service mesh already running in the cluster.",
+      "type": "string",
+      "enum": ["istio", "linkerd", "cilium", "none"]
+    },
+    "ingress": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "implementation": {
+          "description": "The ingress gateway implementation; empty: chosen from mesh.",
+          "type": "string",
+          "enum": ["", "istio", "envoy-gateway", "cilium"]
+        },
+        "namespace": { "$ref": "#/definitions/namespace" },
+        "gateways": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/definitions/key" },
+          "additionalProperties": { "$ref": "#/definitions/ingressGateway" }
+        }
+      }
+    },
+    "egress": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "namespace": { "$ref": "#/definitions/namespace" },
+        "gateways": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/definitions/key" },
+          "additionalProperties": { "$ref": "#/definitions/egressGateway" }
+        }
+      }
+    },
+    "istio": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rootNamespace": { "$ref": "#/definitions/namespace" }
+      }
+    },
+    "mtls": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "description": "Mesh-wide mTLS; inherit renders nothing.",
+          "type": "string",
+          "enum": ["STRICT", "PERMISSIVE", "inherit"]
+        }
+      }
+    },
+    "meshDefaultDeny": {
+      "description": "A mesh-wide allow-nothing AuthorizationPolicy, deny-all.",
+      "type": "boolean"
+    },
+    "accessLogs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "tls": { "$ref": "#/definitions/tls" },
+    "global": {
+      "description": "Helm's global values (set when this chart is a dependency); unused.",
+      "type": "object"
+    }
+  },
+  "definitions": {
+    "key": {
+      "description": "A map key that becomes part of object names.",
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+    },
+    "namespace": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "tlsVersion": {
+      "type": "string",
+      "enum": ["TLSv1_2", "TLSv1_3"]
+    },
+    "tls": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "minVersion": { "$ref": "#/definitions/tlsVersion" },
+        "maxVersion": { "$ref": "#/definitions/tlsVersion" },
+        "cipherSuites": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "enum": ["LoadBalancer", "NodePort", "ClusterIP"] },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "loadBalancerIP": { "type": "string" }
+      }
+    },
+    "infrastructure": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "replicas": { "type": "integer", "minimum": 1 },
+        "autoscaling": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "minReplicas": { "type": "integer", "minimum": 1 },
+            "maxReplicas": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "podDisruptionBudget": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "minAvailable": { "type": ["integer", "string"] }
+          }
+        },
+        "topologySpread": { "type": "boolean" },
+        "nodeSelector": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "tolerations": {
+          "type": "array",
+          "items": { "type": "object" }
+        },
+        "resources": { "type": "object" }
+      }
+    },
+    "listener": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["port", "protocol"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "port": { "$ref": "#/definitions/port" },
+        "protocol": { "type": "string", "enum": ["HTTPS", "HTTP", "TLS", "TCP"] },
+        "hostname": { "type": "string" },
+        "certificates": {
+          "description": "Secret names in the ingress namespace (HTTPS).",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "tls": { "$ref": "#/definitions/tls" },
+        "redirectToHTTPS": { "type": "boolean" },
+        "namespace": { "$ref": "#/definitions/namespace" }
+      }
+    },
+    "ingressGateway": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "service": { "$ref": "#/definitions/service" },
+        "listeners": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/definitions/key" },
+          "additionalProperties": { "$ref": "#/definitions/listener" }
+        },
+        "infrastructure": { "$ref": "#/definitions/infrastructure" }
+      }
+    },
+    "allowedHost": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "hosts": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "addresses": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "ports": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/port" }
+        },
+        "protocol": { "type": "string", "enum": ["TLS", "HTTP", "TCP"] }
+      }
+    },
+    "egressGateway": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "default": { "type": "boolean" },
+        "exitNodes": {
+          "description": "nodeSelector pinning the waypoint to exit nodes.",
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "allowedHosts": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/definitions/key" },
+          "additionalProperties": { "$ref": "#/definitions/allowedHost" }
+        },
+        "infrastructure": { "$ref": "#/definitions/infrastructure" }
+      }
+    }
+  }
+}

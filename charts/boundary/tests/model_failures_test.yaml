@@ -1,0 +1,292 @@
+suite: model failures
+templates:
+  - templates/validate.yaml
+tests:
+  - it: valid values render nothing
+    values: [../../../examples/full.yaml]
+    asserts:
+      - hasDocuments: { count: 0 }
+
+  # Phases that haven't landed.
+
+  - it: mesh linkerd isn't supported yet
+    set:
+      mesh: linkerd
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: mesh: "linkerd" isn''t supported yet \(phase 5 adds it\)'
+
+  - it: mesh none isn't supported yet
+    set:
+      mesh: none
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: mesh: "none" isn''t supported yet \(phase 5 adds it\)'
+
+  - it: mesh cilium isn't supported yet
+    set:
+      mesh: cilium
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: mesh: "cilium" isn''t supported yet \(phase 7 adds it\)'
+
+  - it: ingress.implementation envoy-gateway isn't supported yet
+    set:
+      ingress.implementation: envoy-gateway
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: ingress.implementation: "envoy-gateway" isn''t supported yet \(phase 5 adds it\)'
+
+  - it: ingress.implementation cilium isn't supported yet
+    set:
+      ingress.implementation: cilium
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: ingress.implementation: "cilium" isn''t supported yet \(phase 7 adds it\)'
+
+  - it: ingress.implementation istio is accepted
+    set:
+      ingress.implementation: istio
+    asserts:
+      - notFailedTemplate: {}
+
+  # Default egress gateway.
+
+  - it: two enabled default egress gateways fail, naming both
+    set:
+      egress.gateways.second: { default: true }
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: egress.gateways: exactly one enabled gateway may have default: true; 2 do: default, second'
+
+  - it: no default among the enabled egress gateways fails
+    set:
+      egress.gateways.default.default: false
+      egress.gateways.second: {}
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: egress.gateways: one enabled gateway needs default: true; none of default, second has it'
+
+  - it: a disabled second default doesn't count
+    set:
+      egress.gateways.second: { enabled: false, default: true }
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: switching the default moves it to another gateway
+    set:
+      egress.gateways.default.enabled: false
+      egress.gateways.second: { default: true }
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: no enabled egress gateway needs no default
+    set:
+      egress.gateways.default.enabled: false
+    asserts:
+      - notFailedTemplate: {}
+
+  # allowedHosts entries.
+
+  - it: an entry with both hosts and addresses fails
+    set:
+      egress.gateways.default.allowedHosts.github:
+        hosts: [api.github.com]
+        addresses: [140.82.112.0/20]
+        ports: [443]
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: egress.gateways.default.allowedHosts.github: set hosts or addresses, not both'
+
+  - it: an entry with neither hosts nor addresses fails
+    set:
+      egress.gateways.default.allowedHosts.github:
+        ports: [443]
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: egress.gateways.default.allowedHosts.github: hosts or addresses is required'
+
+  - it: an entry without ports fails
+    set:
+      egress.gateways.default.allowedHosts.github:
+        hosts: [api.github.com]
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: egress.gateways.default.allowedHosts.github: ports are required'
+
+  - it: an entry with empty ports fails
+    set:
+      egress.gateways.default.allowedHosts.github:
+        hosts: [api.github.com]
+        ports: []
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: egress.gateways.default.allowedHosts.github: ports are required'
+
+  - it: TCP with hosts fails
+    set:
+      egress.gateways.default.allowedHosts.github:
+        hosts: [api.github.com]
+        ports: [22]
+        protocol: TCP
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: egress.gateways.default.allowedHosts.github: TCP can''t be matched by host name'
+
+  - it: TLS (the default protocol) with addresses fails
+    set:
+      egress.gateways.default.allowedHosts.mirror:
+        addresses: [203.0.113.10/32]
+        ports: [443]
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: egress.gateways.default.allowedHosts.mirror: TLS is matched by host name \(the TLS server name\), so it needs hosts'
+
+  - it: HTTP with addresses fails
+    set:
+      egress.gateways.default.allowedHosts.mirror:
+        addresses: [203.0.113.10/32]
+        ports: [80]
+        protocol: HTTP
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: egress.gateways.default.allowedHosts.mirror: HTTP is matched by host name \(the Host header\)'
+
+  - it: a disabled entry is still checked
+    set:
+      egress.gateways.default.allowedHosts.github:
+        enabled: false
+        hosts: [api.github.com]
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: egress.gateways.default.allowedHosts.github: ports are required'
+
+  - it: an entry under a disabled gateway is still checked
+    set:
+      egress.gateways.default.enabled: false
+      egress.gateways.default.allowedHosts.github:
+        hosts: [api.github.com]
+        addresses: [140.82.112.0/20]
+        ports: [443]
+    asserts:
+      - failedTemplate:
+          errorPattern: 'set hosts or addresses, not both'
+
+  # Listeners.
+
+  - it: an HTTPS listener without certificates fails
+    set:
+      ingress.gateways.https.listeners.https.certificates: []
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: ingress.gateways.https.listeners.https: an HTTPS listener needs certificates'
+
+  - it: a new HTTPS listener without certificates fails
+    set:
+      ingress.gateways.https.listeners.internal: { port: 8443, protocol: HTTPS }
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: ingress.gateways.https.listeners.internal: an HTTPS listener needs certificates'
+
+  - it: a disabled HTTPS listener without certificates is still checked
+    set:
+      ingress.gateways.https.listeners.internal: { enabled: false, port: 8443, protocol: HTTPS }
+    asserts:
+      - failedTemplate:
+          errorPattern: 'listeners.internal: an HTTPS listener needs certificates'
+
+  - it: tls on a passthrough listener fails
+    set:
+      ingress.gateways.tls-passthrough.listeners.tls.tls: { minVersion: TLSv1_3 }
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: ingress.gateways.tls-passthrough.listeners.tls: tls applies only to HTTPS listeners, which terminate TLS; a TLS listener passes TLS through'
+
+  - it: tls on a TCP listener fails
+    set:
+      ingress.gateways.tcp.listeners.postgres:
+        port: 5432
+        protocol: TCP
+        namespace: databases
+        tls: { minVersion: TLSv1_3 }
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: ingress.gateways.tcp.listeners.postgres: tls applies only to HTTPS listeners, which terminate TLS; a TCP listener carries raw TCP'
+
+  - it: tls on an HTTP listener fails
+    set:
+      ingress.gateways.https.listeners.http.tls: { minVersion: TLSv1_3 }
+    asserts:
+      - failedTemplate:
+          errorPattern: 'listeners.http: tls applies only to HTTPS listeners'
+
+  - it: certificates on a passthrough listener fail
+    set:
+      ingress.gateways.tls-passthrough.listeners.tls.certificates: [apps-tls]
+    asserts:
+      - failedTemplate:
+          errorPattern: 'listeners.tls: certificates apply only to HTTPS listeners'
+
+  - it: a TCP listener without namespace fails
+    set:
+      ingress.gateways.tcp.listeners.postgres: { port: 5432, protocol: TCP }
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: ingress.gateways.tcp.listeners.postgres: a TCP listener needs namespace'
+
+  - it: a TCP listener with a hostname fails
+    set:
+      ingress.gateways.tcp.listeners.postgres:
+        port: 5432
+        protocol: TCP
+        namespace: databases
+        hostname: db.example.mil
+    asserts:
+      - failedTemplate:
+          errorPattern: 'listeners.postgres: hostname doesn''t apply to a TCP listener'
+
+  - it: namespace on a non-TCP listener fails
+    set:
+      ingress.gateways.https.listeners.https.namespace: apps
+    asserts:
+      - failedTemplate:
+          errorPattern: 'listeners.https: namespace applies only to TCP listeners'
+
+  - it: redirectToHTTPS on a non-HTTP listener fails
+    set:
+      ingress.gateways.https.listeners.https.redirectToHTTPS: true
+    asserts:
+      - failedTemplate:
+          errorPattern: 'listeners.https: redirectToHTTPS applies only to HTTP listeners; this one is HTTPS'
+
+  - it: an enabled gateway without enabled listeners fails
+    set:
+      ingress.gateways.tcp.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: ingress.gateways.tcp: an enabled gateway needs at least one enabled listener'
+
+  - it: an enabled gateway whose listeners are all disabled fails
+    set:
+      ingress.gateways.https.listeners.https.enabled: false
+      ingress.gateways.https.listeners.http.enabled: false
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: ingress.gateways.https: an enabled gateway needs at least one enabled listener'
+
+  # TLS versions.
+
+  - it: a chart-wide minVersion above maxVersion fails
+    set:
+      tls: { minVersion: TLSv1_3, maxVersion: TLSv1_2 }
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: tls: minVersion TLSv1_3 is above maxVersion TLSv1_2'
+
+  - it: a listener override above the chart-wide maxVersion fails
+    set:
+      tls.maxVersion: TLSv1_2
+      ingress.gateways.https.listeners.https.tls: { minVersion: TLSv1_3 }
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: ingress.gateways.https.listeners.https.tls: minVersion TLSv1_3 is above maxVersion TLSv1_2'

@@ -1,0 +1,14 @@
+# Mesh-wide PERMISSIVE mTLS, for a cluster still moving workloads into the mesh: pods in the
+# mesh also accept plaintext from pods outside it.
+mesh: istio
+mtls:
+  mode: PERMISSIVE
+ingress:
+  gateways:
+    https:
+      listeners:
+        https:
+          hostname: "*.apps.example.mil"
+          certificates: [apps-tls]
+        http:
+          hostname: "*.apps.example.mil"

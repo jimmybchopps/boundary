@@ -1,0 +1,22 @@
+apiVersion: v2
+name: boundary
+description: >-
+  Security at the edge of the cluster: the ingress and egress gateways, the cluster-wide limit
+  on where traffic may leave for, and the mesh-wide defaults. Mesh-aware, never
+  mesh-installing.
+type: application
+version: 0.1.0
+home: https://github.com/jimmybchopps/boundary
+sources:
+  - https://github.com/jimmybchopps/boundary
+keywords:
+  - gateway-api
+  - istio
+  - security
+  - egress
+annotations:
+  licenses: Apache-2.0
+  # The Kubernetes Gateway API CRDs this chart requires (installed beforehand, never by this
+  # chart): the minimum version and its channel.
+  boundary.posture.dev/gateway-api-version: v1.6.0
+  boundary.posture.dev/gateway-api-channel: standard

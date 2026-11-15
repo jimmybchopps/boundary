@@ -10,12 +10,12 @@ Each phase ends with its acceptance criteria passing in CI.
 
 ## Phase 1: skeleton, model, mesh-wide settings
 
-- [ ] `charts/boundary/` with `Chart.yaml` (required Gateway API version and channel in
+- [x] `charts/boundary/` with `Chart.yaml` (required Gateway API version and channel in
       annotations), `values.yaml` documenting every key, `values.schema.json`, `_helpers.tpl`.
-- [ ] Tooling pinned in a `Makefile` or `.tool-versions`: helm (3.14+ and 4), helm-unittest,
+- [x] Tooling pinned in a `Makefile` or `.tool-versions`: helm (3.14+ and 4), helm-unittest,
       kubeconform, k3d, kubectl, istioctl.
 - [ ] CI: lint, unit tests, kubeconform with Gateway API and Istio CRD schemas.
-- [ ] `_model.tpl`: normalize gateways, listeners, and `allowedHosts`, dropping disabled
+- [x] `_model.tpl`: normalize gateways, listeners, and `allowedHosts`, dropping disabled
       entries. Render failures, each naming the entry:
       - a `mesh` or `ingress.implementation` whose phase hasn't landed;
       - enabled egress gateways with zero or several `default: true`;
@@ -24,12 +24,12 @@ Each phase ends with its acceptance criteria passing in CI.
       - an HTTPS listener without `certificates`;
       - `tls` on a passthrough or TCP listener;
       - a `tcp` listener without `namespace`.
-- [ ] Mesh-wide resources: `PeerAuthentication` (`mtls-strict` by default), the optional
+- [x] Mesh-wide resources: `PeerAuthentication` (`mtls-strict` by default), the optional
       `deny-all`, annotations on everything.
-- [ ] `test/e2e/` harness: k3d, Gateway API CRDs v1.6 (standard), Istio ambient with
+- [x] `test/e2e/` harness: k3d, Gateway API CRDs v1.6 (standard), Istio ambient with
       `platform=k3d`, the two gateway namespaces created and enrolled in ambient, `posture`
       installed in each (exceptions only, until the profiles exist).
-- [ ] e2e: with STRICT, a pod outside the mesh can't reach a meshed pod; with PERMISSIVE it can.
+- [x] e2e: with STRICT, a pod outside the mesh can't reach a meshed pod; with PERMISSIVE it can.
 
 **Done when** the chart installs on the harness and the mTLS e2e passes.
 

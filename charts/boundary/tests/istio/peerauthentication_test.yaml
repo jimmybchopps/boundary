@@ -1,0 +1,35 @@
+suite: PeerAuthentication (mtls.mode)
+templates:
+  - templates/istio/peerauthentication.yaml
+tests:
+  - it: STRICT renders mtls-strict
+    set:
+      mtls.mode: STRICT
+    asserts:
+      - hasDocuments: { count: 1 }
+      - isAPIVersion: { of: security.istio.io/v1 }
+      - equal: { path: metadata.name, value: mtls-strict }
+      - equal: { path: spec, value: { mtls: { mode: STRICT } } }
+
+  - it: PERMISSIVE renders mtls-permissive
+    set:
+      mtls.mode: PERMISSIVE
+    asserts:
+      - hasDocuments: { count: 1 }
+      - equal: { path: metadata.name, value: mtls-permissive }
+      - equal: { path: metadata.annotations, value: { boundary.posture.dev/rule: mtls.mode } }
+      - equal: { path: spec, value: { mtls: { mode: PERMISSIVE } } }
+
+  - it: inherit renders nothing
+    set:
+      mtls.mode: inherit
+    asserts:
+      - hasDocuments: { count: 0 }
+
+  - it: goes in istio.rootNamespace, whatever the release namespace
+    release:
+      namespace: boundary
+    set:
+      istio.rootNamespace: mesh-root
+    asserts:
+      - equal: { path: metadata.namespace, value: mesh-root }

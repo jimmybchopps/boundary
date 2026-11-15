@@ -1,0 +1,56 @@
+suite: model top level
+templates:
+  - templates/model.yaml
+tests:
+  - it: carries the defaults
+    documentSelector: { path: path, value: model }
+    asserts:
+      - equal: { path: mesh, value: istio }
+      - equal: { path: implementation, value: istio }
+      - equal: { path: rootNamespace, value: istio-system }
+      - equal: { path: mtls, value: { mode: STRICT, name: mtls-strict } }
+      - equal: { path: meshDefaultDeny, value: false }
+      - equal: { path: accessLogs, value: { enabled: true } }
+      - equal: { path: tls, value: { minVersion: TLSv1_2, maxVersion: TLSv1_3, cipherSuites: [] } }
+      - equal: { path: ingress, value: { namespace: ingress-gateway, gateways: [https] } }
+      - equal: { path: egress, value: { namespace: egress-gateway, default: default, gateways: [default] } }
+
+  - it: carries overridden settings
+    set:
+      boundary:
+        istio: { rootNamespace: mesh-root }
+        mtls: { mode: inherit }
+        meshDefaultDeny: true
+        accessLogs: { enabled: false }
+        tls: { minVersion: TLSv1_3, cipherSuites: [ECDHE-RSA-AES256-GCM-SHA384] }
+        ingress: { namespace: edge-in }
+        egress: { namespace: edge-out }
+    documentSelector: { path: path, value: model }
+    asserts:
+      - equal: { path: rootNamespace, value: mesh-root }
+      - equal: { path: mtls, value: { mode: inherit, name: "" } }
+      - equal: { path: meshDefaultDeny, value: true }
+      - equal: { path: accessLogs, value: { enabled: false } }
+      - equal:
+          path: tls
+          value: { minVersion: TLSv1_3, maxVersion: TLSv1_3, cipherSuites: [ECDHE-RSA-AES256-GCM-SHA384] }
+      - equal: { path: ingress.namespace, value: edge-in }
+      - equal: { path: egress.namespace, value: edge-out }
+
+  - it: PERMISSIVE names mtls-permissive
+    set:
+      boundary.mtls.mode: PERMISSIVE
+    documentSelector: { path: path, value: model }
+    asserts:
+      - equal: { path: mtls, value: { mode: PERMISSIVE, name: mtls-permissive } }
+
+  - it: an explicit istio implementation resolves to istio
+    set:
+      boundary.ingress.implementation: istio
+    documentSelector: { path: path, value: model }
+    asserts:
+      - equal: { path: implementation, value: istio }
+
+  - it: with defaults, one ingress and one egress gateway, no allowed hosts
+    asserts:
+      - hasDocuments: { count: 3 }

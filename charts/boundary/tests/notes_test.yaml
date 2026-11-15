@@ -1,0 +1,21 @@
+suite: NOTES.txt
+templates:
+  - templates/NOTES.txt
+tests:
+  - it: defaults
+    asserts:
+      - matchRegexRaw: { pattern: 'boundary 0\.1\.0 \(mesh: istio, ingress: istio\)' }
+      - matchRegexRaw: { pattern: 'mTLS: +STRICT \(PeerAuthentication mtls-strict\)' }
+      - matchRegexRaw: { pattern: 'default deny: +off' }
+      - matchRegexRaw: { pattern: 'Gateway API CRDs, v1\.6\.0 or later, standard channel' }
+      - matchRegexRaw: { pattern: 'namespaces ingress-gateway and egress-gateway' }
+
+  - it: inherit and default deny
+    set:
+      mtls.mode: inherit
+      meshDefaultDeny: true
+      istio.rootNamespace: mesh-root
+    asserts:
+      - matchRegexRaw: { pattern: 'Mesh-wide, in mesh-root:' }
+      - matchRegexRaw: { pattern: 'mTLS: +inherit \(no PeerAuthentication' }
+      - matchRegexRaw: { pattern: 'default deny: +on \(AuthorizationPolicy deny-all\)' }

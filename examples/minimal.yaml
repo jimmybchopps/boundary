@@ -1,0 +1,15 @@
+# The defaults, spelled out for a typical first install: Istio ambient, mesh-wide STRICT mTLS,
+# the https ingress gateway with one certificate, and the default egress gateway allowing
+# nothing yet.
+mesh: istio
+mtls:
+  mode: STRICT
+ingress:
+  gateways:
+    https:
+      listeners:
+        https:
+          hostname: "*.apps.example.mil"
+          certificates: [apps-tls]
+        http:
+          hostname: "*.apps.example.mil"

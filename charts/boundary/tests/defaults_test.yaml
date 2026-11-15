@@ -1,0 +1,33 @@
+suite: defaults
+templates:
+  - templates/istio/*.yaml
+  - templates/validate.yaml
+release:
+  name: boundary
+  namespace: istio-system
+tests:
+  - it: renders only the mesh-wide mtls-strict PeerAuthentication
+    asserts:
+      - hasDocuments: { count: 1 }
+        template: templates/istio/peerauthentication.yaml
+      - hasDocuments: { count: 0 }
+        template: templates/istio/deny-all.yaml
+      - hasDocuments: { count: 0 }
+        template: templates/validate.yaml
+
+  - it: the PeerAuthentication carries the labels and the rule annotation
+    template: templates/istio/peerauthentication.yaml
+    asserts:
+      - isKind: { of: PeerAuthentication }
+      - equal: { path: metadata.name, value: mtls-strict }
+      - equal: { path: metadata.namespace, value: istio-system }
+      - equal:
+          path: metadata.labels
+          value:
+            helm.sh/chart: boundary-0.1.0
+            app.kubernetes.io/name: boundary
+            app.kubernetes.io/instance: boundary
+            app.kubernetes.io/managed-by: Helm
+      - equal:
+          path: metadata.annotations
+          value: { boundary.posture.dev/rule: mtls.mode }

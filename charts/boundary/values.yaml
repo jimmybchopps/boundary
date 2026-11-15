@@ -1,0 +1,176 @@
+# boundary: security at the edge of the cluster.
+#
+# One release per cluster. Every key below is documented and checked by values.schema.json;
+# keys for features that aren't built yet are not accepted, so the chart never silently
+# ignores a setting. Combinations a phase hasn't implemented yet fail the render with the
+# setting and the phase that adds it.
+#
+# Map keys (gateways, listeners, allowedHosts entries) become parts of object names:
+# lowercase letters, digits, and "-" only.
+#
+# Switch off, don't delete: every gateway, listener, and allowedHosts entry takes
+# enabled: false (default true). A disabled entry renders nothing but is still checked, so a
+# mistake shows up before it's turned back on. Everything a user might override is a map, so
+# a site's values file can change or turn off one entry without restating the rest.
+#
+# Every object this chart renders carries the annotation boundary.posture.dev/rule: the values
+# path it came from.
+
+# -- The service mesh already running in the cluster. This chart never installs it.
+#    istio:    Istio in ambient mode (istiod, istio-cni, ztunnel).
+#    linkerd:  phase 5 (not supported yet).
+#    none:     phase 5 (not supported yet).
+#    cilium:   phase 7 (not supported yet).
+mesh: istio
+
+ingress:
+  # -- Which gateway implementation serves the ingress gateways. Empty: chosen from mesh
+  #    (istio -> istio, cilium -> cilium, linkerd and none -> envoy-gateway).
+  #    istio:          Istio's Gateway API implementation.
+  #    envoy-gateway:  phase 5 (not supported yet).
+  #    cilium:         phase 7 (not supported yet).
+  implementation: ""
+
+  # -- The namespace the ingress gateways run in. Created and enrolled in the mesh beforehand,
+  #    with its posture release (profile istio-ingress) installed first. Certificate Secrets
+  #    live here too. Shared convention with posture.
+  namespace: ingress-gateway
+
+  # -- Ingress gateways, keyed by name; each becomes its own Gateway with its own Service and
+  #    address. Each takes:
+  #      enabled:         default true.
+  #      service:         the generated Service: type (default LoadBalancer), annotations,
+  #                       loadBalancerIP.
+  #      listeners:       keyed by name. Each takes enabled, port (required), protocol
+  #                       (required: HTTPS, HTTP, TLS, or TCP), and by protocol:
+  #                         HTTPS:  certificates (required: Secret names in the ingress
+  #                                 namespace), hostname, tls (overrides the chart-wide tls).
+  #                         HTTP:   hostname, redirectToHTTPS (every request gets a 301 to
+  #                                 HTTPS).
+  #                         TLS:    hostname; passthrough, routed by SNI with TLSRoutes. No
+  #                                 tls (the workload terminates TLS).
+  #                         TCP:    namespace (required: the only namespace that may attach a
+  #                                 TCPRoute). No tls.
+  #      infrastructure:  the generated Deployment, Service, autoscaler, and disruption budget
+  #                       (phase 2). Defaults:
+  #                         replicas: 2
+  #                         autoscaling: { enabled: false, minReplicas: 2, maxReplicas: 5 }
+  #                         podDisruptionBudget: { minAvailable: 1 }
+  #                         topologySpread: true
+  #                         nodeSelector: {}
+  #                         tolerations: []
+  #                         resources: {}
+  #    Namespaces opt in to the https and tls-passthrough gateways with the label
+  #    ingress.boundary.posture.dev/<gateway>: "true", set when the namespace is created.
+  #    Every enabled gateway needs at least one enabled listener.
+  gateways:
+    # Terminates TLS at the gateway; on by default.
+    https:
+      enabled: true
+      service:
+        type: LoadBalancer
+        annotations: {}
+        loadBalancerIP: ""
+      listeners:
+        https:
+          port: 443
+          protocol: HTTPS
+          # hostname: "*.apps.example.mil"
+          certificates: [apps-tls]
+          # tls: { minVersion: TLSv1_3 }
+        http:
+          port: 80
+          protocol: HTTP
+          # hostname: "*.apps.example.mil"
+          redirectToHTTPS: true
+      infrastructure: {}
+    # TLS goes through to the workload, routed by SNI; off by default.
+    tls-passthrough:
+      enabled: false
+      service:
+        type: LoadBalancer
+      listeners:
+        tls:
+          port: 443
+          protocol: TLS
+          # hostname: "*.apps.example.mil"
+      infrastructure: {}
+    # Raw TCP; off by default. One listener per TCP service, each tied to one namespace.
+    tcp:
+      enabled: false
+      service:
+        type: LoadBalancer
+      listeners: {}
+      #  postgres:
+      #    port: 5432
+      #    protocol: TCP
+      #    namespace: databases
+      infrastructure: {}
+
+egress:
+  # -- The namespace the egress waypoints run in. Created and enrolled in the mesh beforehand,
+  #    with its posture release (profile istio-egress) installed first. Shared convention with
+  #    posture.
+  namespace: egress-gateway
+
+  # -- Egress gateways (waypoints), keyed by name. Exactly one enabled gateway has
+  #    default: true (none is fine when no gateway is enabled). Each takes:
+  #      enabled:         default true.
+  #      default:         the gateway posture's allowedHosts route through unless they name
+  #                       another.
+  #      exitNodes:       optional nodeSelector pinning the waypoint to exit nodes (phase 3).
+  #      allowedHosts:    the cluster-wide limit for traffic through this gateway, keyed by
+  #                       entry name (the same shape as posture's egress.allowedHosts):
+  #                         hosts:      DNS names, a leading "*." allowed; or
+  #                         addresses:  IPs or CIDRs (exactly one of hosts and addresses);
+  #                         ports:      required, numbers;
+  #                         protocol:   TLS (default; matched by SNI, hosts only), HTTP
+  #                                     (matched by Host, hosts only), or TCP (matched by
+  #                                     address, addresses only);
+  #                         enabled:    default true.
+  #      infrastructure:  as for ingress gateways (phase 3).
+  gateways:
+    default:
+      enabled: true
+      default: true
+      exitNodes: {}
+      allowedHosts: {}
+      #  github:
+      #    hosts: [api.github.com]
+      #    ports: [443]
+      #    protocol: TLS
+      #  package-mirror:
+      #    addresses: [203.0.113.10/32]
+      #    ports: [443]
+      #    protocol: TCP
+      infrastructure: {}
+
+istio:
+  # -- Istio's root namespace, where the mesh-wide resources go.
+  rootNamespace: istio-system
+
+mtls:
+  # -- Mesh-wide mTLS, as a PeerAuthentication in istio.rootNamespace.
+  #    STRICT:      mtls-strict; pods in the mesh accept only mTLS.
+  #    PERMISSIVE:  mtls-permissive; they also accept plaintext.
+  #    inherit:     renders nothing; the mesh's own default applies.
+  mode: STRICT
+
+# -- A mesh-wide allow-nothing AuthorizationPolicy, deny-all, in istio.rootNamespace: every
+#    workload in the mesh refuses requests unless an ALLOW policy (posture's, for instance)
+#    admits them. Off by default.
+meshDefaultDeny: false
+
+accessLogs:
+  # -- Access logs for every gateway and waypoint, with Istio's built-in envoy provider
+  #    (phases 2 and 3).
+  enabled: true
+
+# -- TLS settings for every TLS-terminating (HTTPS) listener; a listener's own tls overrides
+#    them key by key (phase 2).
+tls:
+  # TLSv1_2 or TLSv1_3; minVersion may not be above maxVersion.
+  minVersion: TLSv1_2
+  maxVersion: TLSv1_3
+  # TLS 1.2 cipher suites (TLS 1.3's aren't configurable in Envoy). Empty: Envoy's defaults.
+  cipherSuites: []

@@ -1,0 +1,25 @@
+# Snapshots of every example's rendered output. After an intended change, review the diff and
+# update with: make unittest-update
+suite: examples
+templates:
+  - templates/istio/*.yaml
+release:
+  name: boundary
+  namespace: istio-system
+tests:
+  - it: minimal
+    values: [../../../examples/minimal.yaml]
+    asserts:
+      - matchSnapshot: {}
+  - it: permissive
+    values: [../../../examples/permissive.yaml]
+    asserts:
+      - matchSnapshot: {}
+  - it: deny-all
+    values: [../../../examples/deny-all.yaml]
+    asserts:
+      - matchSnapshot: {}
+  - it: full
+    values: [../../../examples/full.yaml]
+    asserts:
+      - matchSnapshot: {}

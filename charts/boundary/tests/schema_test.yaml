@@ -1,0 +1,99 @@
+suite: values schema
+templates:
+  - templates/validate.yaml
+tests:
+  - it: accepts every example's shape and the defaults
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: rejects an unknown top-level key
+    set:
+      meshDefaultDenied: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "meshDefaultDenied"
+
+  - it: rejects an unknown key in a listener
+    set:
+      ingress.gateways.https.listeners.https.certificate: [apps-tls]
+    asserts:
+      - failedTemplate:
+          errorPattern: "certificate"
+
+  - it: rejects an unknown key in an allowedHosts entry
+    set:
+      egress.gateways.default.allowedHosts.github:
+        hosts: [api.github.com]
+        ports: [443]
+        gateway: default
+    asserts:
+      - failedTemplate:
+          errorPattern: "gateway"
+
+  - it: rejects an unknown mesh
+    set:
+      mesh: consul
+    asserts:
+      - failedTemplate:
+          errorPattern: "mesh"
+
+  - it: rejects an unknown mtls.mode
+    set:
+      mtls.mode: DISABLE
+    asserts:
+      - failedTemplate:
+          errorPattern: "mode"
+
+  - it: rejects an unknown TLS version
+    set:
+      tls.minVersion: TLSv1_1
+    asserts:
+      - failedTemplate:
+          errorPattern: "minVersion"
+
+  - it: rejects an unknown listener protocol
+    set:
+      ingress.gateways.https.listeners.http.protocol: UDP
+    asserts:
+      - failedTemplate:
+          errorPattern: "protocol"
+
+  - it: rejects a port out of range
+    set:
+      ingress.gateways.https.listeners.https.port: 70000
+    asserts:
+      - failedTemplate:
+          errorPattern: "port"
+
+  - it: rejects a non-numeric allowedHosts port
+    set:
+      egress.gateways.default.allowedHosts.github:
+        hosts: [api.github.com]
+        ports: [https]
+    asserts:
+      - failedTemplate:
+          errorPattern: "ports"
+
+  - it: rejects a map key that can't be part of a name
+    set:
+      egress.gateways.default.allowedHosts.GitHub:
+        hosts: [api.github.com]
+        ports: [443]
+    asserts:
+      - failedTemplate:
+          errorPattern: "GitHub"
+
+  - it: a new listener needs port and protocol
+    set:
+      ingress.gateways.https.listeners.extra:
+        hostname: extra.example.mil
+    asserts:
+      - failedTemplate:
+          errorPattern: "port"
+
+  - it: accepts every mesh in the contract (the model rejects the unimplemented ones)
+    set:
+      mesh: cilium
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: mesh: "cilium" isn''t supported yet'

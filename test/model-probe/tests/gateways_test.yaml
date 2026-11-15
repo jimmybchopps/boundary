@@ -1,0 +1,154 @@
+suite: model gateways and listeners
+templates:
+  - templates/model.yaml
+tests:
+  - it: the https gateway's defaults
+    documentSelector: { path: path, value: ingress.gateways.https }
+    asserts:
+      - equal: { path: kind, value: IngressGateway }
+      - equal: { path: name, value: https }
+      - equal: { path: service, value: { type: LoadBalancer, annotations: {}, loadBalancerIP: "" } }
+      - equal:
+          path: infrastructure
+          value:
+            replicas: 2
+            autoscaling: { enabled: false, minReplicas: 2, maxReplicas: 5 }
+            podDisruptionBudget: { minAvailable: 1 }
+            topologySpread: true
+            nodeSelector: {}
+            tolerations: []
+            resources: {}
+      - equal:
+          path: listeners
+          value:
+            - name: http
+              path: ingress.gateways.https.listeners.http
+              port: 80
+              protocol: HTTP
+              hostname: ""
+              redirectToHTTPS: true
+            - name: https
+              path: ingress.gateways.https.listeners.https
+              port: 443
+              protocol: HTTPS
+              hostname: ""
+              certificates: [apps-tls]
+              tls: { minVersion: TLSv1_2, maxVersion: TLSv1_3, cipherSuites: [] }
+
+  - it: disabled gateways are dropped
+    documentSelector: { path: path, value: model }
+    asserts:
+      - equal: { path: ingress.gateways, value: [https] }
+
+  - it: enabled defaults to true, and gateways are sorted by name
+    set:
+      boundary.ingress.gateways:
+        tls-passthrough: { enabled: true }
+        admin:
+          listeners:
+            https: { port: 443, protocol: HTTPS, certificates: [admin-tls] }
+    documentSelector: { path: path, value: model }
+    asserts:
+      - equal: { path: ingress.gateways, value: [admin, https, tls-passthrough] }
+
+  - it: disabled listeners are dropped
+    set:
+      boundary.ingress.gateways.https.listeners.http.enabled: false
+    documentSelector: { path: path, value: ingress.gateways.https }
+    asserts:
+      - lengthEqual: { path: listeners, count: 1 }
+      - equal: { path: "listeners[0].name", value: https }
+
+  - it: a TCP listener keeps its namespace
+    set:
+      boundary.ingress.gateways.tcp:
+        enabled: true
+        listeners:
+          postgres: { port: 5432, protocol: TCP, namespace: databases }
+    documentSelector: { path: path, value: ingress.gateways.tcp }
+    asserts:
+      - equal:
+          path: listeners
+          value:
+            - name: postgres
+              path: ingress.gateways.tcp.listeners.postgres
+              port: 5432
+              protocol: TCP
+              hostname: ""
+              namespace: databases
+
+  - it: a passthrough listener carries no tls or certificates
+    set:
+      boundary.ingress.gateways.tls-passthrough.enabled: true
+    documentSelector: { path: path, value: ingress.gateways.tls-passthrough }
+    asserts:
+      - equal:
+          path: listeners
+          value:
+            - name: tls
+              path: ingress.gateways.tls-passthrough.listeners.tls
+              port: 443
+              protocol: TLS
+              hostname: ""
+
+  - it: a listener's tls overrides the chart-wide tls key by key
+    set:
+      boundary.tls.cipherSuites: [ECDHE-RSA-AES256-GCM-SHA384]
+      boundary.ingress.gateways.https.listeners.https.tls: { minVersion: TLSv1_3 }
+    documentSelector: { path: path, value: ingress.gateways.https }
+    asserts:
+      - equal:
+          path: "listeners[1].tls"
+          value: { minVersion: TLSv1_3, maxVersion: TLSv1_3, cipherSuites: [ECDHE-RSA-AES256-GCM-SHA384] }
+
+  - it: a listener may clear the chart-wide cipher suites
+    set:
+      boundary.tls.cipherSuites: [ECDHE-RSA-AES256-GCM-SHA384]
+      boundary.ingress.gateways.https.listeners.https.tls: { cipherSuites: [] }
+    documentSelector: { path: path, value: ingress.gateways.https }
+    asserts:
+      - equal: { path: "listeners[1].tls.cipherSuites", value: [] }
+
+  - it: service and infrastructure values merge over the defaults
+    set:
+      boundary.ingress.gateways.https:
+        service: { annotations: { a: b } }
+        infrastructure:
+          replicas: 3
+          autoscaling: { enabled: true }
+    documentSelector: { path: path, value: ingress.gateways.https }
+    asserts:
+      - equal: { path: service, value: { type: LoadBalancer, annotations: { a: b }, loadBalancerIP: "" } }
+      - equal: { path: infrastructure.replicas, value: 3 }
+      - equal: { path: infrastructure.autoscaling, value: { enabled: true, minReplicas: 2, maxReplicas: 5 } }
+      - equal: { path: infrastructure.podDisruptionBudget, value: { minAvailable: 1 } }
+
+  - it: the default egress gateway
+    documentSelector: { path: path, value: egress.gateways.default }
+    asserts:
+      - equal: { path: kind, value: EgressGateway }
+      - equal: { path: name, value: default }
+      - equal: { path: default, value: true }
+      - equal: { path: exitNodes, value: {} }
+      - equal: { path: allowedHosts, value: [] }
+      - equal: { path: infrastructure.replicas, value: 2 }
+
+  - it: the default egress gateway can be another one
+    set:
+      boundary.egress.gateways:
+        default: { default: false }
+        partner: { default: true, exitNodes: { node.example.mil/exit: "true" } }
+    asserts:
+      - equal: { path: egress, value: { namespace: egress-gateway, default: partner, gateways: [default, partner] } }
+        documentSelector: { path: path, value: model }
+      - equal: { path: exitNodes, value: { node.example.mil/exit: "true" } }
+        documentSelector: { path: path, value: egress.gateways.partner }
+      - equal: { path: default, value: false }
+        documentSelector: { path: path, value: egress.gateways.default }
+
+  - it: no enabled egress gateway leaves the default empty
+    set:
+      boundary.egress.gateways.default.enabled: false
+    documentSelector: { path: path, value: model }
+    asserts:
+      - equal: { path: egress, value: { namespace: egress-gateway, default: "", gateways: [] } }
