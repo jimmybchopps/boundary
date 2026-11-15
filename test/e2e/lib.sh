@@ -91,7 +91,7 @@ install_istio() {
   quiet "$HELM" repo add istio https://blob.istio.io/istio-release/charts --force-update
   istio_chart istio-system istio-base base    --create-namespace
   istio_chart istio-system istiod     istiod  --set profile=ambient
-  istio_chart kube-system  istio-cni  cni     --set profile=ambient
+  istio_chart kube-system  istio-cni  cni     --set profile=ambient --set global.platform=k3s
   istio_chart istio-system ztunnel    ztunnel
   quiet "$KUBECTL" -n kube-system rollout status daemonset/istio-cni-node --timeout=300s
   quiet "$KUBECTL" -n istio-system rollout status daemonset/ztunnel --timeout=300s
