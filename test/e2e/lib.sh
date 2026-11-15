@@ -54,12 +54,15 @@ summary() {
 
 # A plain k3d cluster: flannel stays, since nothing in these scenarios depends on NetworkPolicy
 # enforcement (mTLS is enforced by ztunnel). Traefik is disabled: the gateways are this chart's.
+# k3s's packaged Gateway API CRDs (the gateway-api-crd add-on) are disabled too: the harness
+# installs the pinned ones (install_gateway_api), and k3s's would race them.
 create_cluster() {
   log "creating k3d cluster ${CLUSTER} (${K3S_IMAGE})"
   quiet "$K3D" cluster create "$CLUSTER" \
     --image "$K3S_IMAGE" \
     --agents 1 \
     --k3s-arg '--disable=traefik@server:*' \
+    --k3s-arg '--disable=gateway-api-crd@server:*' \
     --wait
   quiet "$KUBECTL" -n kube-system rollout status deployment/coredns --timeout=120s
 }
