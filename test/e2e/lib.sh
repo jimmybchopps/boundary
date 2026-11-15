@@ -235,14 +235,16 @@ wait_ready() {
   done
 }
 
-# The namespace this chart's ingress gateways run in (ingress.namespace).
+# The namespaces this chart's ingress gateways and egress waypoints run in
+# (ingress.namespace, egress.namespace).
 INGRESS_NAMESPACE=ingress-gateway
+EGRESS_NAMESPACE=egress-gateway
 
 # install_boundary <example file under examples/> [helm args...]
 # This chart as release "boundary" in istio-system (it creates objects in several namespaces,
 # each set explicitly). Extra arguments go to helm after the example, e.g. --set mtls.mode=...
-# or -f "$HERE/values/ingress.yaml". Waits until every ingress gateway is programmed and its
-# Deployment is available.
+# or -f "$HERE/values/ingress.yaml". Waits until every ingress gateway and egress waypoint is
+# programmed and its Deployment is available.
 install_boundary() {
   local example=$1
   shift
@@ -252,26 +254,41 @@ install_boundary() {
   info "boundary installed (examples/${example}${*:+ $*})"
 }
 
-# wait_gateways: every Gateway in the ingress namespace is Programmed and the Deployment Istio
-# generates for it (<gateway>-istio) is available.
+# wait_gateways: every Gateway in the ingress and egress namespaces is Programmed and the
+# Deployment Istio generates for it is available. The Deployment is found by its gateway-name
+# label: it's <gateway>-istio for an ingress gateway, but plain <gateway> for a waypoint.
 wait_gateways() {
-  local gateway
-  for gateway in $("$KUBECTL" -n "$INGRESS_NAMESPACE" get gateways -o jsonpath='{.items[*].metadata.name}'); do
-    quiet "$KUBECTL" -n "$INGRESS_NAMESPACE" wait --for=condition=Programmed "gateway/$gateway" --timeout=180s ||
-      { "$KUBECTL" -n "$INGRESS_NAMESPACE" get "gateway/$gateway" -o yaml >&2; return 1; }
-    retry "$KUBECTL" -n "$INGRESS_NAMESPACE" get "deployment/${gateway}-istio" ||
-      die "Istio generated no Deployment for gateway ${gateway}"
-    quiet "$KUBECTL" -n "$INGRESS_NAMESPACE" rollout status "deployment/${gateway}-istio" --timeout=180s
+  local ns gateway deployment
+  for ns in "$INGRESS_NAMESPACE" "$EGRESS_NAMESPACE"; do
+    for gateway in $("$KUBECTL" -n "$ns" get gateways -o jsonpath='{.items[*].metadata.name}'); do
+      quiet "$KUBECTL" -n "$ns" wait --for=condition=Programmed "gateway/$gateway" --timeout=180s ||
+        { "$KUBECTL" -n "$ns" get "gateway/$gateway" -o yaml >&2; return 1; }
+      retry gateway_deployment "$ns" "$gateway" ||
+        die "Istio generated no Deployment for gateway ${ns}/${gateway}"
+      deployment=$(gateway_deployment "$ns" "$gateway")
+      quiet "$KUBECTL" -n "$ns" rollout status "$deployment" --timeout=180s
+    done
   done
+}
+
+# gateway_deployment <namespace> <gateway>: prints the Deployment Istio generated for it
+# (deployment.apps/<name>); fails if there's none yet.
+gateway_deployment() {
+  local d
+  d=$("$KUBECTL" -n "$1" get deployment -l "gateway.networking.k8s.io/gateway-name=$2" -o name 2>/dev/null)
+  [[ -n $d ]] && printf '%s\n' "$d"
 }
 
 # uninstall_boundary: its objects are mesh-wide, so every scenario that installs it removes it
 # in its teardown, before the next scenario's baseline. Waits until the Deployments Istio
 # generated for its gateways are gone, so the next scenario's gateways start fresh.
 uninstall_boundary() {
+  local ns
   "$HELM" uninstall boundary -n istio-system --wait >/dev/null 2>&1 || true
-  "$KUBECTL" -n "$INGRESS_NAMESPACE" wait --for=delete deployment \
-    -l gateway.istio.io/managed=istio.io-gateway-controller --timeout=120s >/dev/null 2>&1 || true
+  for ns in "$INGRESS_NAMESPACE" "$EGRESS_NAMESPACE"; do
+    "$KUBECTL" -n "$ns" wait --for=delete deployment \
+      -l gateway.networking.k8s.io/gateway-name --timeout=120s >/dev/null 2>&1 || true
+  done
   info "boundary uninstalled"
 }
 
@@ -476,18 +493,208 @@ gateway_pods() {
     -o jsonpath='{range .items[*]}{.metadata.uid} {.status.containerStatuses[0].restartCount}{"\n"}{end}' | sort
 }
 
-# gateway_logs_have <gateway> <text>: one of the gateway's pods logged a line containing text.
+# gateway_logs_have <namespace> <gateway> <text>: one of the gateway's (or waypoint's) pods
+# logged a line containing text.
 # Reads each pod's whole log by name: with a selector (-l), kubectl logs shows only the last 10
 # lines per pod, even with --tail=-1. And no pipe into grep -q, which under pipefail can fail
 # with SIGPIPE after a match.
 gateway_logs_have() {
-  local pod logs
-  for pod in $("$KUBECTL" -n "$INGRESS_NAMESPACE" get pods \
-    -l "gateway.networking.k8s.io/gateway-name=$1" -o name 2>/dev/null); do
-    logs=$("$KUBECTL" -n "$INGRESS_NAMESPACE" logs "$pod" -c istio-proxy 2>/dev/null) || continue
-    [[ $logs == *"$2"* ]] && return 0
+  local ns=$1 pod logs
+  for pod in $("$KUBECTL" -n "$ns" get pods \
+    -l "gateway.networking.k8s.io/gateway-name=$2" -o name 2>/dev/null); do
+    logs=$("$KUBECTL" -n "$ns" logs "$pod" -c istio-proxy 2>/dev/null) || continue
+    [[ $logs == *"$3"* ]] && return 0
   done
   return 1
+}
+
+# ---------------------------------------------------------------------------------------------
+# Gateway and waypoint pods (infrastructure scenarios)
+
+# gateway_field_is <namespace> <want> <kubectl get args...> <jsonpath>: that field of the object
+# is <want>, e.g. gateway_field_is egress-gateway 1 pdb/default '{.spec.minAvailable}'.
+gateway_field_is() {
+  local ns=$1 want=$2 got
+  shift 2
+  got=$("$KUBECTL" -n "$ns" get "${@:1:$#-1}" -o "jsonpath=${!#}" 2>/dev/null) || return 1
+  [[ $got == "$want" ]]
+}
+
+# pods_all_equal <namespace> <gateway> <want> <jsonpath template>: the template, printed once
+# per line over the gateway's pods, gives <want> on every line, and there is at least one pod.
+pods_all_equal() {
+  local ns=$1 selector="gateway.networking.k8s.io/gateway-name=$2" want=$3 lines line
+  [[ -n $("$KUBECTL" -n "$ns" get pods -l "$selector" -o name) ]] || return 1
+  lines=$("$KUBECTL" -n "$ns" get pods -l "$selector" -o "jsonpath=$4") || return 1
+  while IFS= read -r line; do [[ $line == "$want" ]] || return 1; done <<<"$lines"
+}
+
+# every_pod_is <namespace> <gateway> <want> <field jsonpath>: that field of each of its pods.
+every_pod_is() {
+  pods_all_equal "$1" "$2" "$3" "{range .items[*]}$4{\"\\n\"}{end}"
+}
+
+# every_container_is <namespace> <gateway> <want> <field jsonpath>: that field of each container
+# of its pods.
+every_container_is() {
+  pods_all_equal "$1" "$2" "$3" "{range .items[*]}{range .spec.containers[*]}$4{\"\\n\"}{end}{end}"
+}
+
+# only_safe_sysctls <namespace> <gateway>: its pods set no sysctls outside Kubernetes' safe set
+# (the policy chart's restrict-sysctls).
+only_safe_sysctls() {
+  local names name
+  names=$("$KUBECTL" -n "$1" get pods -l "gateway.networking.k8s.io/gateway-name=$2" \
+    -o jsonpath='{range .items[*]}{.spec.securityContext.sysctls[*].name}{" "}{end}') || return 1
+  for name in $names; do
+    case $name in
+      kernel.shm_rmid_forced | net.ipv4.ip_local_port_range | net.ipv4.ip_unprivileged_port_start | \
+        net.ipv4.tcp_syncookies | net.ipv4.ping_group_range | net.ipv4.ip_local_reserved_ports | \
+        net.ipv4.tcp_keepalive_time | net.ipv4.tcp_fin_timeout | net.ipv4.tcp_keepalive_intvl | \
+        net.ipv4.tcp_keepalive_probes) ;;
+      *) return 1 ;;
+    esac
+  done
+}
+
+# baseline_checks <namespace> <gateway>: the policy chart's baked-in baseline, as the gateway's
+# (or waypoint's) generated pods run (README, "Gateway pod compliance").
+baseline_checks() {
+  local ns=$1 gw=$2
+  check "baseline: pod seccompProfile RuntimeDefault (restrict-seccomp, from the ConfigMap)" \
+    every_pod_is "$ns" "$gw" RuntimeDefault '{.spec.securityContext.seccompProfile.type}'
+  check "baseline: no host namespaces (disallow-host-namespaces)" \
+    every_pod_is "$ns" "$gw" "//" '{.spec.hostNetwork}/{.spec.hostPID}/{.spec.hostIPC}'
+  check "baseline: no hostPath volumes (disallow-host-path)" \
+    every_pod_is "$ns" "$gw" "" '{.spec.volumes[*].hostPath}'
+  check "baseline: only safe sysctls (restrict-sysctls)" \
+    only_safe_sysctls "$ns" "$gw"
+  check "baseline: no privilege escalation (disallow-privilege-escalation)" \
+    every_container_is "$ns" "$gw" false '{.securityContext.allowPrivilegeEscalation}'
+  check "baseline: not privileged (disallow-privileged-containers)" \
+    every_container_is "$ns" "$gw" false '{.securityContext.privileged}'
+  check "baseline: drop ALL, add nothing (require-drop-all-capabilities)" \
+    every_container_is "$ns" "$gw" '["ALL"]/' '{.securityContext.capabilities.drop}/{.securityContext.capabilities.add}'
+  check "baseline: run as non-root (require-run-as-non-root)" \
+    every_container_is "$ns" "$gw" true '{.securityContext.runAsNonRoot}'
+  check "baseline: no host ports (disallow-host-ports)" \
+    every_container_is "$ns" "$gw" "" '{.ports[*].hostPort}'
+}
+
+# ---------------------------------------------------------------------------------------------
+# External hosts (egress scenarios)
+#
+# Containers on the k3d Docker network: outside the cluster, on private addresses, started once
+# per run (run.sh). Names under e2e.test resolve to them through CoreDNS (external_dns).
+#   EXT_A, EXT_B  agnhost porter: HTTP on 80 and 8080
+#   EXT_TLS       agnhost netexec: HTTPS on 443, with a certificate for *.e2e.test from the
+#                 run's CA (clients use -k: the checks are about the server name, not trust)
+
+start_external() {
+  log "starting the external hosts"
+  stop_external
+  local name
+  for name in ext-a ext-b; do
+    quiet docker run -d --name "${CLUSTER}-${name}" --network "k3d-${CLUSTER}" \
+      -e SERVE_PORT_80="${name}-80" -e SERVE_PORT_8080="${name}-8080" "$AGNHOST_IMAGE" porter
+  done
+  make_cert external "*.e2e.test"
+  chmod 644 "$CERTS/external.key"
+  quiet docker run -d --name "${CLUSTER}-ext-tls" --network "k3d-${CLUSTER}" \
+    -v "$CERTS:/certs:ro" "$AGNHOST_IMAGE" netexec --http-port=443 --udp-port=-1 \
+    --tls-cert-file=/certs/external.crt --tls-private-key-file=/certs/external.key
+  EXT_A=$(container_ip ext-a)
+  EXT_B=$(container_ip ext-b)
+  EXT_TLS=$(container_ip ext-tls)
+  [[ -n $EXT_A && -n $EXT_B && -n $EXT_TLS ]] || die "an external host has no IP address"
+  export EXT_A EXT_B EXT_TLS
+  info "ext-a ${EXT_A}, ext-b ${EXT_B}, ext-tls ${EXT_TLS}"
+  external_dns
+}
+
+stop_external() {
+  local name
+  for name in ext-a ext-b ext-tls; do
+    docker rm -f "${CLUSTER}-${name}" >/dev/null 2>&1 || true
+  done
+}
+
+container_ip() {
+  docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${CLUSTER}-$1"
+}
+
+# external_dns: a CoreDNS server block for e2e.test (k3s imports coredns-custom's *.server
+# keys), mapping the scenarios' host names to the external hosts. *-http on ext-a, *-tls on
+# ext-tls.
+external_dns() {
+  local h hosts=""
+  for h in allowed-http denied-http second-http; do hosts+="
+          ${EXT_A} ${h}.e2e.test"; done
+  for h in allowed-tls denied-tls second-tls; do hosts+="
+          ${EXT_TLS} ${h}.e2e.test"; done
+  "$KUBECTL" apply -f - >/dev/null <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: coredns-custom, namespace: kube-system }
+data:
+  e2e.server: |
+    e2e.test:53 {
+        errors
+        hosts {${hosts}
+        }
+    }
+EOF
+  quiet "$KUBECTL" -n kube-system rollout restart deployment/coredns
+  quiet "$KUBECTL" -n kube-system rollout status deployment/coredns --timeout=120s
+  info "CoreDNS resolves *.e2e.test to the external hosts"
+}
+
+# service_entry <ns> <name> <gateway> <protocol> <ports, comma-separated> hosts|addresses <value>...
+# A ServiceEntry routed to egress waypoint <gateway>, shaped as posture renders one for an
+# egress.allowedHosts entry: visible only in its namespace, MESH_EXTERNAL, resolution DNS for
+# hosts and NONE for addresses (with a placeholder host), ports named <protocol>-<port>.
+service_entry() {
+  local ns=$1 name=$2 gateway=$3 protocol=$4 ports=$5 kind=$6
+  shift 6
+  local lower port_lines="" value values="" resolution=DNS hosts addresses=""
+  lower=$(tr '[:upper:]' '[:lower:]' <<<"$protocol")
+  for port in ${ports//,/ }; do port_lines+="
+    - { number: ${port}, name: ${lower}-${port}, protocol: ${protocol} }"; done
+  for value in "$@"; do values+="
+    - ${value}"; done
+  if [[ $kind == hosts ]]; then
+    hosts=$values
+  else
+    resolution=NONE
+    hosts="
+    - ${name}.${ns}.posture.internal"
+    addresses="addresses: ${values}"
+  fi
+  "$KUBECTL" apply -f - >/dev/null <<EOF
+apiVersion: networking.istio.io/v1
+kind: ServiceEntry
+metadata:
+  name: ${name}
+  namespace: ${ns}
+  labels:
+    istio.io/use-waypoint: ${gateway}
+    istio.io/use-waypoint-namespace: ${EGRESS_NAMESPACE}
+spec:
+  exportTo: ["."]
+  location: MESH_EXTERNAL
+  resolution: ${resolution}
+  hosts: ${hosts}
+  ${addresses}
+  ports: ${port_lines}
+EOF
+}
+
+# service_entry_has_address <ns>/<name>: Istio allocated it an address (status.addresses), so
+# ztunnel's DNS answers for its hosts with that address and captures the traffic.
+service_entry_has_address() {
+  local got
+  got=$("$KUBECTL" -n "${1%%/*}" get serviceentry "${1#*/}" -o jsonpath='{.status.addresses[*].value}' 2>/dev/null)
+  [[ -n $got ]]
 }
 
 # restart_workloads: replaces every pod in the scenario's namespaces and waits until only the
@@ -542,7 +749,7 @@ cleanup_namespaces() {
 ALLOWS=()
 DENIES=()
 
-expect() { # expect <allow|deny> <ns>/<workload> <host>:<port>
+expect() { # expect <allow|deny> <ns>/<workload> <host>:<port> | https://<host>:<port>
   case $1 in
     allow) ALLOWS+=("$2 $3") ;;
     deny) DENIES+=("$2 $3") ;;
@@ -550,10 +757,14 @@ expect() { # expect <allow|deny> <ns>/<workload> <host>:<port>
   esac
 }
 
-connect() { # connect <ns>/<workload> <host>:<port>; succeeds on an HTTP response
-  local ns=${1%%/*} name=${1#*/}
+# connect <ns>/<workload> <target>: succeeds on a successful HTTP response (curl -f, so a
+# waypoint's 403 "RBAC: access denied" is a refusal). <target> is host:port (HTTP) or
+# https://host:port (TLS, with -k: the server's certificate isn't what's being checked).
+connect() {
+  local ns=${1%%/*} name=${1#*/} url=$2
+  [[ $url == *://* ]] || url="http://${url}"
   "$KUBECTL" -n "$ns" exec "deploy/${name}" -c client -- \
-    curl -sS -o /dev/null -m 3 "http://$2/" >/dev/null 2>&1
+    curl -fsS -k -o /dev/null -m 3 "${url}/" >/dev/null 2>&1
 }
 
 retry_until() { # retry_until <want: up|down> <from> <to>
@@ -658,6 +869,17 @@ dump_state() {
     printf '\n--- %s (istio-proxy, last 10 lines)\n' "$pod"
     "$KUBECTL" -n "$INGRESS_NAMESPACE" logs "$pod" -c istio-proxy --tail=10 2>&1 || true
   done
+  printf '\n--- egress (%s)\n' "$EGRESS_NAMESPACE"
+  "$KUBECTL" -n "$EGRESS_NAMESPACE" get gateways,pods,configmaps,authorizationpolicies,telemetries -o wide 2>&1 || true
+  "$KUBECTL" -n "$EGRESS_NAMESPACE" get gateways \
+    -o jsonpath='{range .items[*]}{.metadata.name}: {range .status.conditions[*]}{.type}={.status}({.reason}) {end}{"\n"}{end}' 2>&1 || true
+  for pod in $("$KUBECTL" -n "$EGRESS_NAMESPACE" get pods -l gateway.networking.k8s.io/gateway-name -o name 2>/dev/null); do
+    printf '\n--- %s (istio-proxy, last 10 lines)\n' "$pod"
+    "$KUBECTL" -n "$EGRESS_NAMESPACE" logs "$pod" -c istio-proxy --tail=10 2>&1 || true
+  done
+  printf '\n--- service entries\n'
+  "$KUBECTL" get serviceentries -A \
+    -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}: hosts={.spec.hosts} waypoint={.metadata.labels.istio\.io/use-waypoint} addresses={.status.addresses[*].value}{"\n"}{end}' 2>&1 || true
   printf '\n--- routes\n'
   "$KUBECTL" get httproutes,tlsroutes,tcproutes -A \
     -o jsonpath='{range .items[*]}{.kind} {.metadata.namespace}/{.metadata.name}: {range .status.parents[*].conditions[*]}{.type}={.status}({.reason}) {end}{"\n"}{end}' 2>&1 || true

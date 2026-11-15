@@ -3,7 +3,7 @@ The data of an Istio gateway's infrastructure ConfigMap (referenced by the Gatew
 spec.infrastructure.parametersRef): strategic-merge patches Istio applies to what it generates
 for the Gateway. Istio 1.32 reads the keys deployment, service, serviceAccount,
 horizontalPodAutoscaler, and podDisruptionBudget; the HPA and PDB exist only when their key is
-present. Used for ingress gateways (phase 2) and egress waypoints (phase 3).
+present. Used for ingress gateways and egress waypoints (which have no service settings).
 
 The deployment patch always sets the pod's seccomp profile to RuntimeDefault: Istio leaves it
 unset, and the policy chart's baked-in restrict-seccomp requires it. Everything else Istio
@@ -30,7 +30,7 @@ Usage: include "boundary.istio.infrastructure" $gateway   (a gateway from the mo
 {{- end -}}
 deployment: |
   {{- toYaml (dict "spec" $deploymentSpec) | nindent 2 }}
-{{- with .service.annotations }}
+{{- with (.service | default dict).annotations }}
 service: |
   {{- toYaml (dict "metadata" (dict "annotations" .)) | nindent 2 }}
 {{- end }}

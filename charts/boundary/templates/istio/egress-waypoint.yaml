@@ -1,0 +1,49 @@
+{{- /*
+One waypoint Gateway per enabled egress.gateways entry (gatewayClassName istio-waypoint, for
+services), in the egress namespace, with its infrastructure ConfigMap (see _infrastructure.tpl;
+exitNodes is part of its nodeSelector). The HBONE listener admits every namespace: posture's
+ServiceEntries in any namespace route here (istio.io/use-waypoint), and the waypoint's
+AuthorizationPolicies (egress-authorization.yaml) are the limit on where traffic goes.
+*/ -}}
+{{- $model := include "boundary.model" . | fromJson -}}
+{{- if eq $model.mesh "istio" }}
+{{- range $gateway := $model.egress.gateways }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ $gateway.name }}
+  namespace: {{ $model.egress.namespace }}
+  labels:
+    {{- include "boundary.labels" $ | nindent 4 }}
+    istio.io/waypoint-for: service
+  annotations:
+    {{- include "boundary.annotations" $gateway.path | nindent 4 }}
+spec:
+  gatewayClassName: istio-waypoint
+  infrastructure:
+    parametersRef:
+      group: ""
+      kind: ConfigMap
+      name: {{ $gateway.infrastructureName }}
+  listeners:
+    - name: mesh
+      port: 15008
+      protocol: HBONE
+      allowedRoutes:
+        namespaces:
+          from: All
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $gateway.infrastructureName }}
+  namespace: {{ $model.egress.namespace }}
+  labels:
+    {{- include "boundary.labels" $ | nindent 4 }}
+  annotations:
+    {{- include "boundary.annotations" (printf "%s.infrastructure" $gateway.path) | nindent 4 }}
+data:
+  {{- include "boundary.istio.infrastructure" $gateway | nindent 2 }}
+{{- end }}
+{{- end }}

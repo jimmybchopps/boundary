@@ -194,16 +194,23 @@ Istio offers no Gateway API field for TLS versions or ciphers, so they're applie
 ### Egress
 
 - One waypoint `Gateway` (`gatewayClassName: istio-waypoint`, label
-  `istio.io/waypoint-for: service`) per enabled `egress.gateways` entry, in the egress namespace.
+  `istio.io/waypoint-for: service`) per enabled `egress.gateways` entry, in the egress namespace,
+  with one HBONE listener (15008) admitting every namespace (`allowedRoutes.namespaces.from:
+  All`): posture's ServiceEntries anywhere route to it, and its policies are the limit. Istio
+  names the generated Deployment and Service after the Gateway (no `-istio` suffix).
 - **The waypoint enforces a limit by destination, never by namespace.** One ALLOW
   `AuthorizationPolicy` per enabled `allowedHosts` entry, targeting the waypoint (`targetRefs`):
   `HTTP` by `to.operation.hosts` and ports, `TLS` by the `connection.sni` condition and ports,
-  `TCP` by `destination.ip` and ports. Because ALLOW policies exist, anything else reaching the
-  waypoint is refused.
+  `TCP` by `destination.ip` and ports. Each waypoint also gets `deny-egress-via-<gateway>`, an
+  ALLOW policy with no rules: Istio allows everything through a waypoint with no ALLOW policy,
+  so this keeps a gateway with no enabled entries closed. Anything no entry matches is refused.
 - **This chart creates no ServiceEntries.** Workloads ask for hosts through their own `posture`
   (`egress.allowedHosts`), which renders namespace-scoped ServiceEntries routed to the waypoint.
   A request outside this chart's list reaches the waypoint and is refused there.
-- `exitNodes`, when set, pins the waypoint to those nodes.
+- `exitNodes`, when set, pins the waypoint to those nodes: merged into the infrastructure
+  ConfigMap's `nodeSelector` (a key also in `infrastructure.nodeSelector` must agree).
+- Hostname ServiceEntries reach the waypoint only with ztunnel's DNS capture and istiod's IP
+  auto-allocation (ambient defaults since Istio 1.25), a mesh prerequisite in the README.
 
 ### Mesh-wide
 
@@ -239,7 +246,8 @@ Renaming any of these is supported, but it must be changed in every chart that u
 ## Naming
 
 - Gateways: their map key (`https`, `tls-passthrough`, `tcp`, `default`).
-- Egress limits: `allow-egress-via-<gateway>-to-<entry>` (`allow-egress-via-default-to-github`).
+- Egress limits: `allow-egress-via-<gateway>-to-<entry>` (`allow-egress-via-default-to-github`),
+  and `deny-egress-via-<gateway>` (the allow-nothing policy).
 - HTTPS redirect: `redirect-http-to-https-<gateway>`.
 - TLS settings: `tls-<gateway>` (EnvoyFilter).
 - Infrastructure ConfigMaps: `<gateway>-infrastructure`.
@@ -255,8 +263,8 @@ charts/boundary/
     _helpers.tpl        names, labels, annotations, the mesh and implementation switches
     _model.tpl          values -> normalized gateways, listeners, allowedHosts; derived
                         names, redirect port, and the per-listener TLS patches
-    istio/              gateways, waypoints, infrastructure, redirect, tls (EnvoyFilter),
-                        egress authorization, mesh-wide, telemetry
+    istio/              ingress gateways, egress waypoints, infrastructure, redirect,
+                        tls (EnvoyFilter), egress authorization, mesh-wide, telemetry
     envoy-gateway/      phase 5
     linkerd/  cilium/   phases 5 and 7
     validate.yaml       builds the model on every render, so invalid values always fail
@@ -296,8 +304,8 @@ needs an e2e case that shows the allowed path works and the refused path is refu
 | Phase | Area | Status |
 |---|---|---|
 | 1 | Skeleton, model, mesh-wide settings | done |
-| 2 | Istio ingress gateways and TLS settings | in progress: static suite passes; e2e not yet run |
-| 3 | Istio egress gateways | not started |
+| 2 | Istio ingress gateways and TLS settings | done |
+| 3 | Istio egress gateways | done |
 | 4 | Integration with `posture` and `policy` (Istio) | not started |
 | 5 | Envoy Gateway ingress (Linkerd and no mesh) and Linkerd egress | not started |
 | 6 | Linkerd and no-mesh integration | not started |

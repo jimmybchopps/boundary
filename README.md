@@ -6,8 +6,8 @@ apply to every namespace.
 
 It is **mesh-aware, not mesh-installing**: it creates resources in the mesh that's already
 running and never installs the mesh itself. Today it supports **Istio in ambient mode**: the
-mesh-wide settings and the ingress gateways. Egress gateways, Envoy Gateway with Linkerd or no
-mesh, and Cilium follow (see [docs/PLAN.md](docs/PLAN.md)).
+mesh-wide settings, the ingress gateways, and the egress gateways. Envoy Gateway with Linkerd or
+no mesh, and Cilium follow (see [docs/PLAN.md](docs/PLAN.md)).
 
 Companion charts: `policy` (the cluster's admission policies) and `posture` (each namespace's
 network policies, authorization, and policy exceptions). boundary never references them; they
@@ -19,7 +19,10 @@ shape).
 This chart installs none of these:
 
 - **Istio in ambient mode**, installed and healthy: istiod, istio-cni, ztunnel. Tested with
-  Istio 1.32.
+  Istio 1.32. Egress to host names also needs ztunnel's **DNS capture** and istiod's **IP
+  auto-allocation** for ServiceEntries. Both are on by default in ambient mode since Istio
+  1.25; don't turn them off (`cni.ambient.dnsCapture`, `PILOT_ENABLE_IP_AUTOALLOCATE`).
+  Without them, a workload's request for a host name never reaches the egress waypoint.
 - **The Kubernetes Gateway API CRDs**, v1.6.0 or later, standard channel. They must exist
   before Istio starts. Without them the install fails with an error like:
 
@@ -44,8 +47,8 @@ This chart installs none of these:
 helm install boundary ./charts/boundary -n istio-system -f values.yaml
 ```
 
-Objects go into the namespaces they belong in (`istio.rootNamespace`, `ingress.namespace`),
-whatever the release namespace. Every value is checked by the chart's JSON schema and its model.
+Objects go into the namespaces they belong in (`istio.rootNamespace`, `ingress.namespace`,
+`egress.namespace`), whatever the release namespace. Every value is checked by the chart's JSON schema and its model.
 A setting the chart can't apply fails the install with the values path and the reason; it is
 never silently ignored. Every object carries the annotation `boundary.posture.dev/rule`, the
 values path it came from.
@@ -112,41 +115,87 @@ EnvoyFilter patches Envoy's internals, so an Istio upgrade can break it. The e2e
 negotiated TLS versions and that certificates still load. Treat a new Istio version as
 unsupported until those checks pass on it.
 
-### Access logs
+## Egress gateways
 
-With `accessLogs.enabled` (the default), each gateway gets a Telemetry (`access-logs-<gateway>`)
-using Istio's built-in `envoy` provider: one line per request or connection on the gateway pod's
-stdout.
+Each enabled entry in `egress.gateways` becomes an Istio **waypoint** in `egress.namespace`: a
+Gateway with `gatewayClassName: istio-waypoint` and the label `istio.io/waypoint-for: service`,
+whose Deployment and Service Istio names after the Gateway. One gateway, `default`, is defined;
+exactly one enabled gateway has `default: true`.
 
-### Infrastructure
+**How traffic gets there.** This chart creates no ServiceEntries. A workload asks for a host
+through its own `posture` release (`egress.allowedHosts`), which renders a ServiceEntry in the
+workload's namespace labeled `istio.io/use-waypoint: <gateway>`. ztunnel then sends that
+traffic to the waypoint. The waypoint's HBONE listener admits every namespace
+(`allowedRoutes.namespaces.from: All`); the waypoint's own list decides where traffic may go.
 
-Each gateway's `infrastructure` becomes a ConfigMap, `<gateway>-infrastructure`, referenced by
+**The limit.** The waypoint enforces it by destination, never by namespace. Each enabled
+`allowedHosts` entry becomes an ALLOW AuthorizationPolicy targeting the waypoint,
+`allow-egress-via-<gateway>-to-<entry>`:
+
+| `protocol` | Matched by | Entry needs |
+|---|---|---|
+| `TLS` (default) | the TLS server name (`connection.sni`) and port | `hosts` |
+| `HTTP` | the Host header (`to.operation.hosts`) and port | `hosts` |
+| `TCP` | the destination address (`destination.ip`) and port | `addresses` |
+
+Each waypoint also gets `deny-egress-via-<gateway>`, an ALLOW policy with no rules. Istio allows
+everything through a waypoint that has no ALLOW policy, so without it a gateway with no enabled
+entries would be open. With it, a request through the waypoint that no entry matches is
+refused: a TLS connection is reset, and an HTTP request gets a 403.
+
+```yaml
+egress:
+  gateways:
+    default:
+      allowedHosts:
+        github: { hosts: [api.github.com], ports: [443], protocol: TLS }
+        package-mirror: { addresses: [203.0.113.10/32], ports: [443], protocol: TCP }
+```
+
+The `allowedHosts` shape is the same as `posture`'s, so an entry can be copied between the two.
+
+**Exit nodes.** `exitNodes` is a node selector for the waypoint's pods, so traffic leaves the
+cluster from those nodes' addresses. It's merged into `infrastructure.nodeSelector`; a key set
+in both must have the same value.
+
+## Access logs
+
+With `accessLogs.enabled` (the default), each ingress gateway and egress waypoint gets a
+Telemetry (`access-logs-<gateway>`) using Istio's built-in `envoy` provider: one line per
+request or connection on the pod's stdout.
+
+## Infrastructure
+
+Each gateway's and waypoint's `infrastructure` becomes a ConfigMap, `<gateway>-infrastructure`, referenced by
 the Gateway's `spec.infrastructure.parametersRef`. Istio applies each key as a strategic-merge
 patch to what it generates for the Gateway. Istio 1.32 reads these keys:
 
 | Key | Patches | Set by this chart |
 |---|---|---|
 | `deployment` | the Deployment | always: pod `seccompProfile: RuntimeDefault`; `replicas` (unless autoscaling); with `topologySpread`, a spread across nodes; `nodeSelector`, `tolerations`, and the `istio-proxy` container's `resources`, when set |
-| `service` | the Service | `metadata.annotations`, when `service.annotations` is set |
+| `service` | the Service | `metadata.annotations`, when `service.annotations` is set (ingress only; a waypoint's Service is ClusterIP) |
 | `horizontalPodAutoscaler` | an HPA, created only when the key is present | `minReplicas` and `maxReplicas`, when `autoscaling.enabled` |
 | `podDisruptionBudget` | a PDB, created only when the key is present | always: `minAvailable` |
 | `serviceAccount` | the ServiceAccount | not used |
 
-The Service type is passed to Istio with the Gateway annotation `networking.istio.io/service-type`.
-`service.loadBalancerIP` becomes the Gateway's `spec.addresses`.
+For ingress gateways, the Service type is passed to Istio with the Gateway annotation
+`networking.istio.io/service-type`. `service.loadBalancerIP` becomes the Gateway's
+`spec.addresses`. Waypoints take `exitNodes` as well (see above).
 
-### Gateway pod compliance
+## Gateway pod compliance
 
 The pods Istio generates are made to pass the `policy` chart's baseline through the
 infrastructure ConfigMap, never through `posture` exceptions. Here is the comparison for Istio
-1.32's generated gateway pod. The e2e checks the baked-in rows on a live cluster.
+1.32's generated gateway pod (`kube-gateway.yaml`) and waypoint pod (`waypoint.yaml`); both
+pass every baked-in row. The e2e checks the baked-in rows on a live cluster for
+both.
 
 **Baked-in policies (always enforced):**
 
 | Policy | Generated pod | Result |
 |---|---|---|
 | `disallow-host-namespaces` | no hostNetwork, hostPID, or hostIPC | passes |
-| `disallow-host-path` | volumes: emptyDir, downwardAPI, projected | passes |
+| `disallow-host-path` | volumes: emptyDir, downwardAPI, projected (the waypoint also a configMap) | passes |
 | `disallow-host-ports` | no hostPort | passes |
 | `disallow-privilege-escalation` | `allowPrivilegeEscalation: false` | passes |
 | `disallow-privileged-containers` | `privileged: false` | passes |
@@ -158,23 +207,24 @@ infrastructure ConfigMap, never through `posture` exceptions. Here is the compar
 | `restrict-proc-mount` | default | passes |
 | `restrict-seccomp` | **unset by Istio** | **fixed**: the ConfigMap sets `RuntimeDefault` |
 | `restrict-selinux` | not set | passes |
-| `restrict-sysctls` | `net.ipv4.ip_unprivileged_port_start` only, a safe sysctl | passes |
-| `restrict-volume-types` | emptyDir, downwardAPI, projected | passes |
+| `restrict-sysctls` | gateway: `net.ipv4.ip_unprivileged_port_start` only, a safe sysctl; waypoint: none | passes |
+| `restrict-volume-types` | emptyDir, downwardAPI, projected, configMap (waypoint) | passes |
 
 **Optional policies that are on by default:** these still flag the generated pod. They're
 resolved with the `policy` chart installed (docs/PLAN.md, phase 4):
 
 | Policy | Finding |
 |---|---|
-| `disallow-mesh-opt-out` | Istio labels the pod `sidecar.istio.io/inject: "false"` |
+| `disallow-mesh-opt-out` | Istio labels the pod `sidecar.istio.io/inject: "false"`, and the waypoint pod also `istio.io/dataplane-mode: none` |
 | `require-standard-labels` | no `app.kubernetes.io/name` label |
 | `require-image-digest` | the proxy image is pinned by tag, not digest |
-| `restrict-loadbalancer-services` | the default `LoadBalancer` Service needs the ingress namespace in the policy's `namespaces` |
+| `restrict-loadbalancer-services` | the ingress gateway's default `LoadBalancer` Service needs the ingress namespace in the policy's `namespaces` (waypoints use ClusterIP) |
 | `require-probes` (audit by default) | readiness and startup probes, but no liveness probe |
 
 `require-read-only-root-filesystem` and `require-resource-limits` pass. Istio sets a read-only
-root filesystem, and the proxy's default resources (`global.proxy.resources`) include CPU and
-memory requests and a memory limit.
+root filesystem. The gateway's default resources (`global.proxy.resources`) include CPU and
+memory requests and a memory limit; the waypoint's (`global.waypoint.resources`) include
+requests and both limits.
 
 ## Development
 

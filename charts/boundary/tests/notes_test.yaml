@@ -38,3 +38,24 @@ tests:
       ingress.gateways.https.enabled: false
     asserts:
       - matchRegexRaw: { pattern: 'Ingress gateways, in ingress-gateway:\n  none' }
+
+  - it: lists the egress waypoints and what each allows
+    set:
+      egress.gateways.default:
+        exitNodes: { node.example.mil/exit: "true" }
+        allowedHosts:
+          github: { hosts: [api.github.com, github.com], ports: [443], protocol: TLS }
+          mirror: { addresses: [203.0.113.10/32], ports: [443, 8443], protocol: TCP }
+      egress.gateways.partner: { default: false }
+    asserts:
+      - matchRegexRaw: { pattern: 'Egress gateways \(waypoints\), in egress-gateway:' }
+      - matchRegexRaw: { pattern: 'default \(default\), on nodes node\.example\.mil/exit=true:' }
+      - matchRegexRaw: { pattern: 'github: TLS api\.github\.com, github\.com on 443' }
+      - matchRegexRaw: { pattern: 'mirror: TCP 203\.0\.113\.10/32 on 443, 8443' }
+      - matchRegexRaw: { pattern: 'partner:\n    allows nothing: every request through it is refused' }
+
+  - it: says when there are no egress gateways
+    set:
+      egress.gateways.default.enabled: false
+    asserts:
+      - matchRegexRaw: { pattern: 'Egress gateways \(waypoints\), in egress-gateway:\n  none' }

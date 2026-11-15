@@ -70,14 +70,16 @@ Each phase ends with its acceptance criteria passing in CI.
 
 ## Phase 3: Istio egress gateways
 
-- [ ] A waypoint Gateway per enabled `egress.gateways` entry (`istio-waypoint`,
+- [x] A waypoint Gateway per enabled `egress.gateways` entry (`istio-waypoint`,
       `istio.io/waypoint-for: service`), with its infrastructure ConfigMap and access logs.
-- [ ] `exitNodes`: node selector on the waypoint only when set.
-- [ ] ALLOW AuthorizationPolicies per enabled `allowedHosts` entry, targeting the waypoint:
+- [x] `exitNodes`: node selector on the waypoint only when set.
+- [x] ALLOW AuthorizationPolicies per enabled `allowedHosts` entry, targeting the waypoint:
       `HTTP` by host, `TLS` by `connection.sni`, `TCP` by `destination.ip`, each with its ports.
-- [ ] Confirm whether ztunnel's DNS proxying (a mesh setting) is needed for hostname
+- [x] Confirm whether ztunnel's DNS proxying (a mesh setting) is needed for hostname
       ServiceEntries to route through the waypoint, and list it as a mesh prerequisite if so.
-- [ ] e2e, using a hand-written namespace-scoped ServiceEntry routed to the waypoint (shaped as
+      Needed (DNS capture and IP auto-allocation, both on by default in ambient since Istio
+      1.25); listed in the README prerequisites and checked by the `egress-hosts` scenario.
+- [x] e2e, using a hand-written namespace-scoped ServiceEntry routed to the waypoint (shaped as
       `posture` will render it):
       - a host in the list is reached through the waypoint (seen in its access log);
       - a host not in the list reaches the waypoint and is refused;

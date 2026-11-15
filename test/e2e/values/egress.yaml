@@ -1,0 +1,19 @@
+# The egress scenarios: the default waypoint allows one host per protocol. The TCP entry needs
+# the external host's address, known only at run time, so the scenarios add it with --set-json
+# (see _egress.sh). No ingress gateways.
+ingress:
+  gateways:
+    https:
+      enabled: false
+egress:
+  gateways:
+    default:
+      allowedHosts:
+        tls:
+          hosts: [allowed-tls.e2e.test]
+          ports: [443]
+          protocol: TLS
+        http:
+          hosts: [allowed-http.e2e.test]
+          ports: [80]
+          protocol: HTTP

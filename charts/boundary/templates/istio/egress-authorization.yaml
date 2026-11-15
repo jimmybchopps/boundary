@@ -1,0 +1,79 @@
+{{- /*
+The cluster-wide egress limit, enforced at each waypoint by destination, never by namespace:
+  deny-egress-via-<gateway>                 an ALLOW policy with no rules (allows nothing), so
+                                            the waypoint refuses everything even when no entry
+                                            is enabled
+  allow-egress-via-<gateway>-to-<entry>     one per enabled allowedHosts entry:
+                                              HTTP  by Host (to.operation.hosts) and port
+                                              TLS   by server name (connection.sni) and port
+                                              TCP   by address (destination.ip) and port
+All target the waypoint (targetRefs). ALLOW policies add up: a request through the waypoint
+is allowed only if one entry matches it.
+*/ -}}
+{{- $model := include "boundary.model" . | fromJson -}}
+{{- if eq $model.mesh "istio" }}
+{{- range $gateway := $model.egress.gateways }}
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ $gateway.denyName }}
+  namespace: {{ $model.egress.namespace }}
+  labels:
+    {{- include "boundary.labels" $ | nindent 4 }}
+  annotations:
+    {{- include "boundary.annotations" (printf "%s.allowedHosts" $gateway.path) | nindent 4 }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ $gateway.name }}
+  action: ALLOW
+{{- range $entry := $gateway.allowedHosts }}
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ $entry.policyName }}
+  namespace: {{ $model.egress.namespace }}
+  labels:
+    {{- include "boundary.labels" $ | nindent 4 }}
+  annotations:
+    {{- include "boundary.annotations" $entry.path | nindent 4 }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ $gateway.name }}
+  action: ALLOW
+  rules:
+    - to:
+        - operation:
+            {{- if eq $entry.protocol "HTTP" }}
+            hosts:
+              {{- range $entry.hosts }}
+              - {{ . | quote }}
+              {{- end }}
+            {{- end }}
+            ports:
+              {{- range $entry.ports }}
+              - {{ int . | toString | quote }}
+              {{- end }}
+      {{- if eq $entry.protocol "TLS" }}
+      when:
+        - key: connection.sni
+          values:
+            {{- range $entry.hosts }}
+            - {{ . | quote }}
+            {{- end }}
+      {{- else if eq $entry.protocol "TCP" }}
+      when:
+        - key: destination.ip
+          values:
+            {{- range $entry.addresses }}
+            - {{ . | quote }}
+            {{- end }}
+      {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

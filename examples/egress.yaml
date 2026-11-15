@@ -1,0 +1,30 @@
+# Egress through the default waypoint: workloads ask for these hosts with their own posture
+# (egress.allowedHosts), and the waypoint refuses anything else. The waypoint is pinned to
+# exit nodes, so traffic leaves the cluster from their addresses.
+egress:
+  gateways:
+    default:
+      exitNodes:
+        node-role.example.mil/egress: "true"
+      allowedHosts:
+        github:
+          hosts: [api.github.com, github.com, objects.githubusercontent.com]
+          ports: [443]
+          protocol: TLS
+        container-registries:
+          hosts: ["*.docker.io", "*.quay.io"]
+          ports: [443]
+          protocol: TLS
+        os-updates:
+          hosts: [archive.ubuntu.com, security.ubuntu.com]
+          ports: [80]
+          protocol: HTTP
+        package-mirror:
+          addresses: [203.0.113.10/32, 203.0.113.11/32]
+          ports: [443, 8443]
+          protocol: TCP
+      infrastructure:
+        replicas: 3
+        podDisruptionBudget: { minAvailable: 2 }
+        tolerations:
+          - { key: node-role.example.mil/egress, operator: Exists, effect: NoSchedule }

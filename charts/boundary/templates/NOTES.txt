@@ -27,6 +27,20 @@ Ingress gateways, in {{ $model.ingress.namespace }}:
   none
 {{- end }}
 
+Egress gateways (waypoints), in {{ $model.egress.namespace }}:
+{{- range $gateway := $model.egress.gateways }}
+  {{ $gateway.name }}{{ if $gateway.default }} (default){{ end }}{{ with $gateway.exitNodes }}{{ $pairs := list }}{{ range $k, $v := . }}{{ $pairs = append $pairs (printf "%s=%s" $k $v) }}{{ end }}, on nodes {{ join "," $pairs }}{{ end }}:
+  {{- range $gateway.allowedHosts }}
+    {{ .name }}: {{ .protocol }} {{ join ", " (default .addresses .hosts) }} on {{ range $i, $p := .ports }}{{ if $i }}, {{ end }}{{ int $p }}{{ end }}
+  {{- else }}
+    allows nothing: every request through it is refused (no enabled allowedHosts)
+  {{- end }}
+{{- else }}
+  none
+{{- end }}
+  Workloads route to a waypoint with their own posture (egress.allowedHosts); this list is the
+  cluster-wide limit on where those requests may go.
+
 Prerequisites this chart never installs:
   - the Gateway API CRDs, {{ index .Chart.Annotations "boundary.posture.dev/gateway-api-version" }} or later, {{ index .Chart.Annotations "boundary.posture.dev/gateway-api-channel" }} channel
   - the mesh ({{ $model.mesh }}), installed and healthy
