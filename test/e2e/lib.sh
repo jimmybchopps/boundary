@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Helpers for the boundary e2e tests. Sourced by run.sh; expects MESH, CLUSTER, ROOT, HERE, the
 # tool variables (K3D, KUBECTL, HELM, ISTIOCTL), the image variables, and the pinned downloads
-# (GATEWAY_API_CRDS, POSTURE_CHART, POLICY_CRD) to be set.
+# (GATEWAY_API_CRDS, POSTURE_CHART, POLICY_CRD; POLICY_CHART for integration.sh) to be set.
 
 # ---------------------------------------------------------------------------------------------
 # Output
@@ -52,19 +52,45 @@ summary() {
 # ---------------------------------------------------------------------------------------------
 # Cluster
 
-# A plain k3d cluster: flannel stays, since nothing in these scenarios depends on NetworkPolicy
-# enforcement (mTLS is enforced by ztunnel). Traefik is disabled: the gateways are this chart's.
-# k3s's packaged Gateway API CRDs (the gateway-api-crd add-on) are disabled too: the harness
-# installs the pinned ones (install_gateway_api), and k3s's would race them.
+# A plain k3d cluster: flannel stays, since nothing in run.sh's scenarios depends on
+# NetworkPolicy enforcement (mTLS is enforced by ztunnel). Traefik is disabled: the gateways are
+# this chart's. k3s's packaged Gateway API CRDs (the gateway-api-crd add-on) are disabled too:
+# the harness installs the pinned ones (install_gateway_api), and k3s's would race them.
+# CNI=calico (integration.sh) replaces flannel and k3s's network policy controller with Calico
+# (install_calico), as posture's harness does, so posture's NetworkPolicies are enforced.
 create_cluster() {
-  log "creating k3d cluster ${CLUSTER} (${K3S_IMAGE})"
+  local cni_args=()
+  if [[ ${CNI:-flannel} == calico ]]; then
+    cni_args=(--k3s-arg '--flannel-backend=none@server:*'
+      --k3s-arg '--disable-network-policy@server:*'
+      --k3s-arg '--cluster-cidr=192.168.0.0/16@server:*')
+  fi
+  log "creating k3d cluster ${CLUSTER} (${K3S_IMAGE}, CNI ${CNI:-flannel})"
   quiet "$K3D" cluster create "$CLUSTER" \
     --image "$K3S_IMAGE" \
     --agents 1 \
+    "${cni_args[@]}" \
     --k3s-arg '--disable=traefik@server:*' \
     --k3s-arg '--disable=gateway-api-crd@server:*' \
     --wait
+  if [[ ${CNI:-flannel} == calico ]]; then install_calico; fi
   quiet "$KUBECTL" -n kube-system rollout status deployment/coredns --timeout=120s
+}
+
+# install_calico: Calico through the Tigera operator, following k3d's guide
+# (https://k3d.io/v5.9.0/usage/advanced/calico/) as posture's harness does. The upstream
+# custom-resources.yaml is applied unmodified; its IP pool (192.168.0.0/16) matches the
+# --cluster-cidr create_cluster passes to k3s. It runs before the policy chart is installed, so
+# its pods (in namespaces the policy chart evaluates but that have no posture) are already
+# admitted.
+install_calico() {
+  log "installing Calico ${CALICO_VERSION:?set CALICO_VERSION} (Tigera operator)"
+  quiet "$KUBECTL" create -f "https://raw.githubusercontent.com/projectcalico/calico/v${CALICO_VERSION}/manifests/tigera-operator.yaml"
+  quiet "$KUBECTL" create -f "https://raw.githubusercontent.com/projectcalico/calico/v${CALICO_VERSION}/manifests/custom-resources.yaml"
+  # The status object only appears once the operator has picked up the Installation.
+  quiet "$KUBECTL" wait --for=create tigerastatus/calico --timeout=120s
+  quiet "$KUBECTL" wait --for=condition=Available tigerastatus/calico --timeout=300s
+  info "Calico is ready"
 }
 
 delete_cluster() {
@@ -87,25 +113,74 @@ install_gateway_api() {
   info "Gateway API CRDs established ($(wc -w <<<"$crds") CRDs)"
 }
 
-# Istio ambient: istiod and ztunnel in istio-system, istio-cni in kube-system. platform=k3d
-# points istio-cni at k3s's CNI directories.
+# Istio ambient: istiod and ztunnel in istio-system, istio-cni in kube-system. With flannel,
+# platform k3d (k3s for istio-cni) points istio-cni at k3s's CNI directories; on the Calico
+# cluster ISTIO_PLATFORM is empty, as in posture's harness, and no platform is set.
+ISTIO_PLATFORM=${ISTIO_PLATFORM-k3d}
+
 install_istio() {
-  log "installing Istio ${ISTIO_VERSION} (ambient, platform k3d)"
+  install_istio_base
+  install_istio_control_plane
+}
+
+# install_istio_base: Istio's CRDs (the base chart), on their own: the integration run installs
+# them before the policy chart and posture, whose istio-system release needs them.
+install_istio_base() {
+  log "installing Istio ${ISTIO_VERSION} (ambient${ISTIO_PLATFORM:+, platform ${ISTIO_PLATFORM}})"
   quiet "$HELM" repo add istio https://blob.istio.io/istio-release/charts --force-update
-  istio_chart istio-system istio-base base    --create-namespace
-  istio_chart istio-system istiod     istiod  --set profile=ambient
-  istio_chart kube-system  istio-cni  cni     --set profile=ambient --set global.platform=k3s
-  istio_chart istio-system ztunnel    ztunnel
-  quiet "$KUBECTL" -n kube-system rollout status daemonset/istio-cni-node --timeout=300s
-  quiet "$KUBECTL" -n istio-system rollout status daemonset/ztunnel --timeout=300s
+  istio_chart istio-system istio-base base --create-namespace
+}
+
+# install_istio_control_plane: istiod, istio-cni, and ztunnel. Images are full references pinned
+# by digest (ISTIO_*_IMAGE; global.proxy.image is the gateways' and waypoints' proxy), and
+# istiod and ztunnel get a memory limit beside the charts' requests: the policy chart's
+# require-image-digest and require-resource-limits, as a site running it would set them
+# (README, "Running under the policy chart"). istio-cni runs in kube-system, which the policy
+# chart never evaluates.
+install_istio_control_plane() {
+  istio_chart istio-system istiod istiod --set profile=ambient \
+    --set "image=${ISTIO_PILOT_IMAGE}" --set "global.proxy.image=${ISTIO_PROXY_IMAGE}" \
+    --set resources.limits.memory=2Gi
+  istio_chart kube-system istio-cni cni --set profile=ambient ${ISTIO_PLATFORM:+--set global.platform=k3s}
+  istio_chart istio-system ztunnel ztunnel \
+    --set "image=${ISTIO_ZTUNNEL_IMAGE}" --set resources.limits.memory=1Gi
+  quiet "$KUBECTL" -n kube-system rollout status daemonset/istio-cni-node --timeout=300s ||
+    { refused_pods kube-system; return 1; }
+  quiet "$KUBECTL" -n istio-system rollout status daemonset/ztunnel --timeout=300s ||
+    { refused_pods istio-system; return 1; }
   info "istio-cni and ztunnel are ready on every node"
+}
+
+# refused_pods <namespace>: prints the namespace's FailedCreate events (a controller's pod
+# refused at admission names the policy there), to stderr.
+refused_pods() {
+  local events
+  events=$("$KUBECTL" -n "$1" get events --field-selector reason=FailedCreate \
+    -o custom-columns=OBJECT:.involvedObject.name,MESSAGE:.message --no-headers 2>/dev/null)
+  if [[ -n $events ]]; then printf '\n--- pods refused in %s\n%s\n' "$1" "$events" >&2; fi
+}
+
+# k3d_network_cidr: the IPv4 subnet of the cluster's Docker network. The API server runs in the
+# k3d server container, so its calls to istiod's webhooks come from there (posture's
+# istio-system profile, apiServerCidrs).
+k3d_network_cidr() {
+  local subnet
+  for subnet in $(docker network inspect "k3d-${CLUSTER}" -f '{{range .IPAM.Config}}{{.Subnet}} {{end}}'); do
+    if [[ $subnet == *.* ]]; then printf '%s' "$subnet"; return 0; fi
+  done
+  die "no IPv4 subnet on Docker network k3d-${CLUSTER}"
 }
 
 istio_chart() { # istio_chart <namespace> <release> <chart> [helm args...]
   local ns=$1 release=$2 chart=$3
   shift 3
-  quiet "$HELM" install "$release" "istio/$chart" -n "$ns" --version "$ISTIO_VERSION" \
-    --set global.platform=k3d --wait "$@"
+  local platform=()
+  if [[ -n $ISTIO_PLATFORM ]]; then platform=(--set "global.platform=${ISTIO_PLATFORM}"); fi
+  if ! quiet "$HELM" install "$release" "istio/$chart" -n "$ns" --version "$ISTIO_VERSION" \
+    "${platform[@]}" --wait "$@"; then
+    refused_pods "$ns"
+    return 1
+  fi
   info "${release} installed in ${ns}"
 }
 
@@ -130,6 +205,47 @@ gateway_namespaces() {
 }
 
 # ---------------------------------------------------------------------------------------------
+# The policy chart and posture (integration.sh)
+
+# install_policy: the policy chart's CRD and the chart itself, as release "policy" in namespace
+# "policy", with test/e2e/values/integration/policy.yaml: the defaults, enforced, plus the
+# settings a site running boundary sets (README, "Running under the policy chart"). From here
+# on, a pod in a namespace without posture-exceptions is refused.
+install_policy() {
+  log "installing the policy chart $(basename "$POLICY_CHART" .tgz) (defaults, enforced)"
+  quiet "$KUBECTL" apply -f "$POLICY_CRD"
+  quiet "$KUBECTL" wait --for=condition=Established crd/policyexceptions.policy.posture.dev --timeout=60s
+  quiet "$HELM" install policy "$POLICY_CHART" -n policy --create-namespace \
+    -f "$HERE/values/integration/policy.yaml" --take-ownership --wait
+  info "policy installed"
+}
+
+# posture_release <namespace> <values file under values/integration/ or values/>... [helm args...]
+# posture in the namespace, installed or upgraded (--reset-values, so nothing stays from an
+# earlier release), from the given values files in order.
+posture_release() {
+  local ns=$1 args=() f
+  shift
+  while [[ $# -gt 0 && $1 == *.yaml ]]; do
+    f=$HERE/values/integration/$1
+    [[ -f $f ]] || f=$HERE/values/$1
+    args+=(-f "$f")
+    shift
+  done
+  quiet "$HELM" upgrade --install posture "$POSTURE_CHART" -n "$ns" --reset-values \
+    "${args[@]}" "$@" --wait
+  info "${ns}: posture from ${args[*]##*/}"
+}
+
+# admission_refused <text> <manifest>: applying the manifest (on stdin) is refused at admission
+# and the error contains <text>; nothing is created.
+admission_refused() {
+  local text=$1 out
+  if out=$("$KUBECTL" apply -f - 2>&1); then return 1; fi
+  [[ $out == *"$text"* ]]
+}
+
+# ---------------------------------------------------------------------------------------------
 # Namespaces and workloads
 
 NAMESPACES=()
@@ -150,7 +266,10 @@ namespace() {
 # ServiceAccount <name>, with a server container (agnhost porter, HTTP on every port, readiness
 # probe on the first) and a client container (curl), plus a Service <name>.<namespace> on the
 # same ports. It meets the policy chart's baseline (non-root, RuntimeDefault seccomp, no
-# privilege escalation, every capability dropped), so it's admitted under it too.
+# privilege escalation, every capability dropped) and its default-on optional policies (images
+# by digest, a read-only root filesystem, CPU and memory requests and a memory limit), so it's
+# admitted under the integration run's enforced defaults too. The client's /tmp is an emptyDir
+# (copy_to writes the CA there).
 #
 # For an impostor, override with environment variables:
 #   LABEL=<name>  pods carry app.kubernetes.io/name=<LABEL> instead; no Service is created
@@ -211,13 +330,25 @@ spec:
             periodSeconds: 2
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 64Mi }
         - name: client
           image: ${CURL_IMAGE}
           command: [sleep, infinity]
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 64Mi }
+      volumes:
+        - { name: tmp, emptyDir: {} }
 ${service}
 EOF
 }
@@ -474,7 +605,11 @@ spec:
             periodSeconds: 2
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 64Mi }
 ---
 apiVersion: v1
 kind: Service

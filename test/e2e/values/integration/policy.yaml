@@ -1,0 +1,25 @@
+# The policy chart in the integration run (test/e2e/integration.sh): its defaults, enforced
+# (enforcement: enforce is the chart's default and stays), plus what a site running boundary
+# sets (README, "Running under the policy chart"). Nothing here loosens a default for boundary's
+# sake: the gateway and waypoint pods are admitted with only the exception posture's
+# istio-ingress and istio-egress profiles carry.
+policies:
+  # Baked-in: the registries the run's images come from, fully qualified (prefix match).
+  restrict-image-registries:
+    registries:
+      - docker.io/istio/          # istiod, ztunnel, the gateway and waypoint proxies
+      - registry.k8s.io/          # agnhost (AGNHOST_IMAGE)
+      - docker.io/curlimages/     # curl (CURL_IMAGE)
+  # Default on: only the ingress gateways' namespace gets LoadBalancer Services. The run's
+  # gateway is ClusterIP, but a site's is a LoadBalancer (ingress.gateways.<gateway>.service).
+  restrict-loadbalancer-services:
+    namespaces: [ingress-gateway]
+  # Optional, turned on and enforced: a route may only claim hostnames under its own namespace
+  # (shop -> *.shop.e2e.test). The ingress gateways' namespace is skipped: boundary's
+  # redirect-http-to-https-<gateway> route has no hostnames, since it answers every hostname of
+  # its HTTP listener (policy 0.2.1+).
+  restrict-route-hostnames:
+    enabled: true
+    action: enforce
+    domains: [e2e.test]
+    namespaces: [ingress-gateway]

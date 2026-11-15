@@ -1,5 +1,7 @@
-# posture in a gateway namespace (ingress-gateway, egress-gateway), rendering only an empty
-# posture-exceptions: no NetworkPolicies, mesh none. Stands in for the istio-ingress and
-# istio-egress profiles until this harness runs under the policy chart (phase 4).
+# posture rendering only an empty posture-exceptions: no NetworkPolicies, mesh none.
+#   run.sh:          the gateway namespaces' posture (run.sh runs without the policy chart, so
+#                    the istio-ingress and istio-egress profiles aren't needed there).
+#   integration.sh:  each application namespace's first posture, so its pods are admitted
+#                    under the policy chart and the baseline can run before its own posture.
 mesh: none
 networkPolicy: { ingress: false, egress: false }

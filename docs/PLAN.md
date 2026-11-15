@@ -95,20 +95,24 @@ Each phase ends with its acceptance criteria passing in CI.
 
 The full stack on one cluster: Gateway API CRDs, `policy`, Istio ambient, `posture` in every
 namespace (profiles `istio-system`, `istio-ingress`, `istio-egress` where they apply), then this
-chart.
+chart. `test/e2e/integration.sh` (`make e2e-integration`), on a Calico cluster so posture's
+NetworkPolicies are enforced, with policy 0.2.1 and posture 0.2.0.
 
-- [ ] Gateway and waypoint pods are admitted under the `policy` baseline with an **empty**
-      `posture-exceptions` object. If `disallow-mesh-opt-out` or another policy flags Istio's
-      generated pods, fix it in the infrastructure ConfigMap, or add the exception to the
-      `posture` gateway profile and document why.
+- [ ] Gateway and waypoint pods are admitted under the `policy` chart's defaults, enforced, with
+      only the documented profile exception in `posture-exceptions`: `disallow-mesh-opt-out`,
+      from posture's `istio-ingress` and `istio-egress` profiles, selected by the
+      `app.kubernetes.io/component` label boundary sets through `spec.infrastructure.labels`
+      (with `app.kubernetes.io/name`, for `require-standard-labels`). Istio's images are pinned
+      by digest at install (README, "Running under the policy chart").
 - [ ] Ingress: an application namespace with its `posture` (the `ingress-gateway` source), the
       route label, and an HTTPRoute is reachable through `https`.
 - [ ] Egress: an application whose `posture` lists a host in `egress.allowedHosts`:
       - reaches it through the default gateway when this chart's list includes it;
       - is refused at the waypoint when it doesn't;
       - another namespace that didn't list the host can't reach it.
-- [ ] With the optional `policy` route-hostname rule enabled, a route claiming another
-      namespace's hostname is denied at admission.
+- [ ] With the optional `policy` route-hostname rule enabled (and the ingress namespace in its
+      `namespaces`, for the redirect route), a route claiming another namespace's hostname, or
+      no hostname, is denied at admission.
 - [ ] A clean install and uninstall in the documented order leaves no stuck resources.
 
 **Done when** every case above passes on one cluster from a single script.
@@ -161,14 +165,13 @@ chart.
 
 Listed here so the conventions stay in step; each is done in its own repo.
 
-**`posture`** (its phase 5): built-in profiles (`istio-system`, `istio-ingress`,
-`istio-egress`; later `envoy-gateway` and Linkerd's), `enabled` on every rule and reference,
-`destinations` references as a map, gateway presets in `ingress-gateway` and `egress-gateway`,
-and `egress.allowedHosts` in the shared shape.
+Done for Istio: posture 0.2.0 (the `istio-system`, `istio-ingress`, `istio-egress` profiles,
+`egress.allowedHosts`) and policy 0.2.1 (`restrict-route-hostnames`, with `namespaces`).
 
-**`policy`**: optional `restrict-route-hostnames` (route hostnames must be
-`<namespace>.<domain>` or under it), and optionally `restrict-service-entries` (who may create
-ServiceEntries; not needed for the egress limit, which the waypoint enforces).
+**`posture`**: the `envoy-gateway` and Linkerd profiles (phase 5), and Cilium's (phase 7).
+
+**`policy`**: optionally `restrict-service-entries` (who may create ServiceEntries; not needed
+for the egress limit, which the waypoint enforces).
 
 ---
 

@@ -35,8 +35,10 @@ This chart installs none of these:
   off and install the CRDs yourself.
 - **The gateway namespaces**, `ingress-gateway` and `egress-gateway` by default. Each must be
   created, enrolled in the mesh (`istio.io/dataplane-mode=ambient`), and have its `posture`
-  release installed first. On a cluster running the `policy` chart, pods in a namespace without
-  `posture-exceptions` are refused.
+  release installed first, with the profile `istio-ingress` or `istio-egress` (posture 0.2.0 or
+  later). On a cluster running the `policy` chart, pods in a namespace without
+  `posture-exceptions` are refused, and the gateway pods need the profile's one exception (see
+  [Running under the policy chart](#running-under-the-policy-chart)).
 - **TLS certificate Secrets** (`kubernetes.io/tls`) in the ingress namespace, named by the
   listeners' `certificates`. This chart only references them. Replacing a Secret takes effect
   without restarting the gateway.
@@ -52,6 +54,74 @@ Objects go into the namespaces they belong in (`istio.rootNamespace`, `ingress.n
 A setting the chart can't apply fails the install with the values path and the reason; it is
 never silently ignored. Every object carries the annotation `boundary.posture.dev/rule`, the
 values path it came from.
+
+## Install order
+
+On a cluster with every companion chart, install in this order. Each step needs the ones before
+it, and the integration test (`make e2e-integration`) follows the same order:
+
+1. The Gateway API CRDs.
+2. Istio's CRDs (the `base` chart).
+3. The `policy` chart. From here on, a pod in a namespace without `posture-exceptions` is
+   refused.
+4. `posture` in `istio-system`, profile `istio-system`.
+5. istiod, istio-cni, and ztunnel.
+6. The gateway namespaces, enrolled in the mesh, each with `posture` (profiles `istio-ingress`
+   and `istio-egress`).
+7. The TLS Secrets in the ingress namespace.
+8. boundary.
+9. Application namespaces, at any point after step 5: `posture` first, then their workloads
+   and routes.
+
+Uninstall in reverse: boundary, then the namespaces' `posture` releases and the namespaces,
+then Istio, then `policy`.
+
+## Running under the policy chart
+
+boundary's gateway and waypoint pods pass the `policy` chart's defaults, enforced, with one
+`posture` exception. A site sets these:
+
+- **`posture` profiles in the gateway namespaces** (posture 0.2.0 or later). Istio labels its
+  gateway pods `sidecar.istio.io/inject: "false"` (and waypoint pods also
+  `istio.io/dataplane-mode: none`), which `disallow-mesh-opt-out` refuses. Those labels are what
+  make the gateway Istio's own proxy rather than a workload in the mesh, so they stay. The
+  `istio-ingress` and `istio-egress` profiles except the pods boundary labels
+  `app.kubernetes.io/component: ingress-gateway` or `egress-waypoint` from that one policy.
+  Everything else in the baseline, boundary fixes itself (see
+  [Gateway pod compliance](#gateway-pod-compliance)).
+- **`restrict-image-registries`**: the registry Istio's images come from (`docker.io/istio/` for
+  the upstream images).
+- **`restrict-loadbalancer-services`**: `namespaces: [ingress-gateway]` (`ingress.namespace`),
+  so the ingress gateways' LoadBalancer Services are allowed there and nowhere else.
+- **`restrict-route-hostnames`** (optional, policy 0.2.1 or later when turned on): list the
+  ingress namespace in its `namespaces`. boundary's `redirect-http-to-https-<gateway>` route has
+  no hostnames, because it answers every hostname on its HTTP listener, so it can't meet the
+  rule. Only boundary's own routes can attach to that namespace's listeners.
+
+  ```yaml
+  policies:
+    restrict-route-hostnames:
+      enabled: true
+      domains: [apps.example.mil]
+      namespaces: [ingress-gateway]
+  ```
+
+- **Istio's install**: images pinned by digest (`require-image-digest`), as full references,
+  and a memory limit for istiod and ztunnel (`require-resource-limits`):
+
+  ```sh
+  helm install istiod istio/istiod -n istio-system --set profile=ambient \
+    --set image=docker.io/istio/pilot:1.32.0-distroless@sha256:<digest> \
+    --set global.proxy.image=docker.io/istio/proxyv2:1.32.0-distroless@sha256:<digest> \
+    --set resources.limits.memory=2Gi
+  helm install ztunnel istio/ztunnel -n istio-system \
+    --set image=docker.io/istio/ztunnel:1.32.0-distroless@sha256:<digest> \
+    --set resources.limits.memory=1Gi
+  ```
+
+  `global.proxy.image` is also the gateways' and waypoints' proxy image. istio-cni runs in
+  `kube-system`, which the policy chart doesn't evaluate. The Makefile pins the digests the
+  tests use.
 
 ## Mesh-wide settings
 
@@ -185,7 +255,9 @@ For ingress gateways, the Service type is passed to Istio with the Gateway annot
 ## Gateway pod compliance
 
 The pods Istio generates are made to pass the `policy` chart's baseline through the
-infrastructure ConfigMap, never through `posture` exceptions. Here is the comparison for Istio
+infrastructure ConfigMap and the Gateway's `spec.infrastructure.labels`, never through
+`posture` exceptions. The one exception, `disallow-mesh-opt-out` (an optional policy), comes
+from `posture`'s gateway profiles. Here is the comparison for Istio
 1.32's generated gateway pod (`kube-gateway.yaml`) and waypoint pod (`waypoint.yaml`); both
 pass every baked-in row. The e2e checks the baked-in rows on a live cluster for
 both.
@@ -210,16 +282,16 @@ both.
 | `restrict-sysctls` | gateway: `net.ipv4.ip_unprivileged_port_start` only, a safe sysctl; waypoint: none | passes |
 | `restrict-volume-types` | emptyDir, downwardAPI, projected, configMap (waypoint) | passes |
 
-**Optional policies that are on by default:** these still flag the generated pod. They're
-resolved with the `policy` chart installed (docs/PLAN.md, phase 4):
+**Optional policies that are on by default.** The integration test checks these with the
+`policy` chart's defaults enforced:
 
-| Policy | Finding |
-|---|---|
-| `disallow-mesh-opt-out` | Istio labels the pod `sidecar.istio.io/inject: "false"`, and the waypoint pod also `istio.io/dataplane-mode: none` |
-| `require-standard-labels` | no `app.kubernetes.io/name` label |
-| `require-image-digest` | the proxy image is pinned by tag, not digest |
-| `restrict-loadbalancer-services` | the ingress gateway's default `LoadBalancer` Service needs the ingress namespace in the policy's `namespaces` (waypoints use ClusterIP) |
-| `require-probes` (audit by default) | readiness and startup probes, but no liveness probe |
+| Policy | Generated pod | Result |
+|---|---|---|
+| `disallow-mesh-opt-out` | Istio labels the pod `sidecar.istio.io/inject: "false"`, and the waypoint pod also `istio.io/dataplane-mode: none` | **excepted** by `posture`'s `istio-ingress` and `istio-egress` profiles, selected by the component label below |
+| `require-standard-labels` | Istio sets no `app.kubernetes.io/name` | **fixed**: the Gateway's `spec.infrastructure.labels` sets `app.kubernetes.io/name: <gateway>` and `app.kubernetes.io/component: ingress-gateway` or `egress-waypoint` |
+| `require-image-digest` | the proxy image as Istio is configured | site-specific: install Istio with `global.proxy.image` pinned by digest |
+| `restrict-loadbalancer-services` | the ingress gateway's default `LoadBalancer` Service | site-specific: list the ingress namespace in the policy's `namespaces` (waypoints use ClusterIP) |
+| `require-probes` (audit by default) | readiness and startup probes, but no liveness probe | reported, not refused |
 
 `require-read-only-root-filesystem` and `require-resource-limits` pass. Istio sets a read-only
 root filesystem. The gateway's default resources (`global.proxy.resources`) include CPU and
@@ -236,6 +308,7 @@ make tools            # helm, helm-unittest, kubeconform
 make test             # lint, unit tests, kubeconform on every example
 make test-all-helm    # the same under Helm 3.14, the latest 3.x, and 4
 make e2e MESH=istio   # k3d end-to-end tests (Docker and openssl); E2E_ARGS=<scenario> E2E_KEEP=1
+make e2e-integration MESH=istio   # the whole stack under policy and posture, then uninstall; E2E_KEEP=1
 ```
 
 See [CLAUDE.md](CLAUDE.md) for the values contract and conventions, and [docs/PLAN.md](docs/PLAN.md) for

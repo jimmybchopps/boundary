@@ -22,6 +22,11 @@ metadata:
 spec:
   gatewayClassName: istio
   infrastructure:
+    # Copied by Istio onto the generated pods: require-standard-labels needs the name, and
+    # posture's istio-ingress profile selects the gateway pods by the component.
+    labels:
+      app.kubernetes.io/name: {{ $gateway.name }}
+      app.kubernetes.io/component: ingress-gateway
     parametersRef:
       group: ""
       kind: ConfigMap
