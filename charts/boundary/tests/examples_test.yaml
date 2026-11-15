@@ -23,3 +23,7 @@ tests:
     values: [../../../examples/full.yaml]
     asserts:
       - matchSnapshot: {}
+  - it: egress
+    values: [../../../examples/egress.yaml]
+    asserts:
+      - matchSnapshot: {}

@@ -1,16 +1,20 @@
 {{- /*
-accessLogs: one Telemetry per gateway, access-logs-<gateway>, targeting it, with Istio's
-built-in envoy log provider (every request and connection on the gateway's stdout).
+accessLogs: one Telemetry per ingress gateway and egress waypoint, access-logs-<gateway>, in
+its namespace, targeting it, with Istio's built-in envoy log provider (every request and
+connection on the pod's stdout).
 */ -}}
 {{- $model := include "boundary.model" . | fromJson -}}
 {{- if and (eq $model.mesh "istio") $model.accessLogs.enabled }}
-{{- range $gateway := $model.ingress.gateways }}
+{{- $all := list -}}
+{{- range $model.ingress.gateways }}{{ $all = append $all (dict "gateway" . "namespace" $model.ingress.namespace) }}{{ end -}}
+{{- range $model.egress.gateways }}{{ $all = append $all (dict "gateway" . "namespace" $model.egress.namespace) }}{{ end -}}
+{{- range $all }}
 ---
 apiVersion: telemetry.istio.io/v1
 kind: Telemetry
 metadata:
-  name: {{ $gateway.accessLogsName }}
-  namespace: {{ $model.ingress.namespace }}
+  name: {{ .gateway.accessLogsName }}
+  namespace: {{ .namespace }}
   labels:
     {{- include "boundary.labels" $ | nindent 4 }}
   annotations:
@@ -19,7 +23,7 @@ spec:
   targetRefs:
     - group: gateway.networking.k8s.io
       kind: Gateway
-      name: {{ $gateway.name }}
+      name: {{ .gateway.name }}
   accessLogging:
     - providers:
         - name: envoy

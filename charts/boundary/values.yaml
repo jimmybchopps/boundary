@@ -120,12 +120,17 @@ egress:
   #    posture.
   namespace: egress-gateway
 
-  # -- Egress gateways (waypoints), keyed by name. Exactly one enabled gateway has
+  # -- Egress gateways, keyed by name. Each enabled one is an Istio waypoint (a Gateway with
+  #    gatewayClassName istio-waypoint) that every namespace may route to: posture's
+  #    ServiceEntries (egress.allowedHosts) send requests there, and the waypoint refuses any
+  #    that its own allowedHosts don't match (deny-egress-via-<gateway> allows nothing; each
+  #    entry adds allow-egress-via-<gateway>-to-<entry>). Exactly one enabled gateway has
   #    default: true (none is fine when no gateway is enabled). Each takes:
   #      enabled:         default true.
   #      default:         the gateway posture's allowedHosts route through unless they name
   #                       another.
-  #      exitNodes:       optional nodeSelector pinning the waypoint to exit nodes (phase 3).
+  #      exitNodes:       optional nodeSelector pinning the waypoint to exit nodes (merged
+  #                       into infrastructure.nodeSelector; a key in both must agree).
   #      allowedHosts:    the cluster-wide limit for traffic through this gateway, keyed by
   #                       entry name (the same shape as posture's egress.allowedHosts):
   #                         hosts:      DNS names, a leading "*." allowed; or
@@ -135,7 +140,8 @@ egress:
   #                                     (matched by Host, hosts only), or TCP (matched by
   #                                     address, addresses only);
   #                         enabled:    default true.
-  #      infrastructure:  as for ingress gateways (phase 3).
+  #      infrastructure:  as for ingress gateways (no service settings: a waypoint's
+  #                       Service is ClusterIP).
   gateways:
     default:
       enabled: true
@@ -169,7 +175,7 @@ mtls:
 meshDefaultDeny: false
 
 accessLogs:
-  # -- Access logs for every gateway (and, from phase 3, waypoint): a Telemetry
+  # -- Access logs for every gateway and waypoint: a Telemetry
   #    access-logs-<gateway> with Istio's built-in envoy provider, logging to the pod's stdout.
   enabled: true
 

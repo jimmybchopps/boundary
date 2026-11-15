@@ -14,6 +14,85 @@ deny-all:
       namespace: istio-system
     spec: {}
   2: |
+    apiVersion: security.istio.io/v1
+    kind: AuthorizationPolicy
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: egress.gateways.default.allowedHosts
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: deny-egress-via-default
+      namespace: egress-gateway
+    spec:
+      action: ALLOW
+      targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: default
+  3: |
+    apiVersion: gateway.networking.k8s.io/v1
+    kind: Gateway
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: egress.gateways.default
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+        istio.io/waypoint-for: service
+      name: default
+      namespace: egress-gateway
+    spec:
+      gatewayClassName: istio-waypoint
+      infrastructure:
+        parametersRef:
+          group: ""
+          kind: ConfigMap
+          name: default-infrastructure
+      listeners:
+        - allowedRoutes:
+            namespaces:
+              from: All
+          name: mesh
+          port: 15008
+          protocol: HBONE
+  4: |
+    apiVersion: v1
+    data:
+      deployment: |
+        spec:
+          replicas: 2
+          template:
+            spec:
+              securityContext:
+                seccompProfile:
+                  type: RuntimeDefault
+              topologySpreadConstraints:
+              - labelSelector:
+                  matchLabels:
+                    gateway.networking.k8s.io/gateway-name: default
+                maxSkew: 1
+                topologyKey: kubernetes.io/hostname
+                whenUnsatisfiable: ScheduleAnyway
+      podDisruptionBudget: |
+        spec:
+          minAvailable: 1
+    kind: ConfigMap
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: egress.gateways.default.infrastructure
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: default-infrastructure
+      namespace: egress-gateway
+  5: |
     apiVersion: gateway.networking.k8s.io/v1
     kind: Gateway
     metadata:
@@ -58,7 +137,7 @@ deny-all:
                 kind: Secret
                 name: apps-tls
             mode: Terminate
-  3: |
+  6: |
     apiVersion: v1
     data:
       deployment: |
@@ -90,7 +169,7 @@ deny-all:
         helm.sh/chart: boundary-0.1.0
       name: https-infrastructure
       namespace: ingress-gateway
-  4: |
+  7: |
     apiVersion: gateway.networking.k8s.io/v1
     kind: HTTPRoute
     metadata:
@@ -115,7 +194,7 @@ deny-all:
                 scheme: https
                 statusCode: 301
               type: RequestRedirect
-  5: |
+  8: |
     apiVersion: networking.istio.io/v1alpha3
     kind: EnvoyFilter
     metadata:
@@ -149,7 +228,7 @@ deny-all:
       workloadSelector:
         labels:
           gateway.networking.k8s.io/gateway-name: https
-  6: |
+  9: |
     apiVersion: security.istio.io/v1
     kind: PeerAuthentication
     metadata:
@@ -165,7 +244,7 @@ deny-all:
     spec:
       mtls:
         mode: STRICT
-  7: |
+  10: |
     apiVersion: telemetry.istio.io/v1
     kind: Telemetry
     metadata:
@@ -186,8 +265,694 @@ deny-all:
         - group: gateway.networking.k8s.io
           kind: Gateway
           name: https
+  11: |
+    apiVersion: telemetry.istio.io/v1
+    kind: Telemetry
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: accessLogs
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: access-logs-default
+      namespace: egress-gateway
+    spec:
+      accessLogging:
+        - providers:
+            - name: envoy
+      targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: default
+egress:
+  1: |
+    apiVersion: security.istio.io/v1
+    kind: AuthorizationPolicy
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: egress.gateways.default.allowedHosts
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: deny-egress-via-default
+      namespace: egress-gateway
+    spec:
+      action: ALLOW
+      targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: default
+  2: |
+    apiVersion: security.istio.io/v1
+    kind: AuthorizationPolicy
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: egress.gateways.default.allowedHosts.container-registries
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: allow-egress-via-default-to-container-registries
+      namespace: egress-gateway
+    spec:
+      action: ALLOW
+      rules:
+        - to:
+            - operation:
+                ports:
+                  - "443"
+          when:
+            - key: connection.sni
+              values:
+                - '*.docker.io'
+                - '*.quay.io'
+      targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: default
+  3: |
+    apiVersion: security.istio.io/v1
+    kind: AuthorizationPolicy
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: egress.gateways.default.allowedHosts.github
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: allow-egress-via-default-to-github
+      namespace: egress-gateway
+    spec:
+      action: ALLOW
+      rules:
+        - to:
+            - operation:
+                ports:
+                  - "443"
+          when:
+            - key: connection.sni
+              values:
+                - api.github.com
+                - github.com
+                - objects.githubusercontent.com
+      targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: default
+  4: |
+    apiVersion: security.istio.io/v1
+    kind: AuthorizationPolicy
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: egress.gateways.default.allowedHosts.os-updates
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: allow-egress-via-default-to-os-updates
+      namespace: egress-gateway
+    spec:
+      action: ALLOW
+      rules:
+        - to:
+            - operation:
+                hosts:
+                  - archive.ubuntu.com
+                  - security.ubuntu.com
+                ports:
+                  - "80"
+      targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: default
+  5: |
+    apiVersion: security.istio.io/v1
+    kind: AuthorizationPolicy
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: egress.gateways.default.allowedHosts.package-mirror
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: allow-egress-via-default-to-package-mirror
+      namespace: egress-gateway
+    spec:
+      action: ALLOW
+      rules:
+        - to:
+            - operation:
+                ports:
+                  - "443"
+                  - "8443"
+          when:
+            - key: destination.ip
+              values:
+                - 203.0.113.10/32
+                - 203.0.113.11/32
+      targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: default
+  6: |
+    apiVersion: gateway.networking.k8s.io/v1
+    kind: Gateway
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: egress.gateways.default
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+        istio.io/waypoint-for: service
+      name: default
+      namespace: egress-gateway
+    spec:
+      gatewayClassName: istio-waypoint
+      infrastructure:
+        parametersRef:
+          group: ""
+          kind: ConfigMap
+          name: default-infrastructure
+      listeners:
+        - allowedRoutes:
+            namespaces:
+              from: All
+          name: mesh
+          port: 15008
+          protocol: HBONE
+  7: |
+    apiVersion: v1
+    data:
+      deployment: |
+        spec:
+          replicas: 3
+          template:
+            spec:
+              nodeSelector:
+                node-role.example.mil/egress: "true"
+              securityContext:
+                seccompProfile:
+                  type: RuntimeDefault
+              tolerations:
+              - effect: NoSchedule
+                key: node-role.example.mil/egress
+                operator: Exists
+              topologySpreadConstraints:
+              - labelSelector:
+                  matchLabels:
+                    gateway.networking.k8s.io/gateway-name: default
+                maxSkew: 1
+                topologyKey: kubernetes.io/hostname
+                whenUnsatisfiable: ScheduleAnyway
+      podDisruptionBudget: |
+        spec:
+          minAvailable: 2
+    kind: ConfigMap
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: egress.gateways.default.infrastructure
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: default-infrastructure
+      namespace: egress-gateway
+  8: |
+    apiVersion: gateway.networking.k8s.io/v1
+    kind: Gateway
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: ingress.gateways.https
+        networking.istio.io/service-type: LoadBalancer
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: https
+      namespace: ingress-gateway
+    spec:
+      gatewayClassName: istio
+      infrastructure:
+        parametersRef:
+          group: ""
+          kind: ConfigMap
+          name: https-infrastructure
+      listeners:
+        - allowedRoutes:
+            namespaces:
+              from: Same
+          name: http
+          port: 80
+          protocol: HTTP
+        - allowedRoutes:
+            namespaces:
+              from: Selector
+              selector:
+                matchLabels:
+                  ingress.boundary.posture.dev/https: "true"
+          name: https
+          port: 443
+          protocol: HTTPS
+          tls:
+            certificateRefs:
+              - group: ""
+                kind: Secret
+                name: apps-tls
+            mode: Terminate
+  9: |
+    apiVersion: v1
+    data:
+      deployment: |
+        spec:
+          replicas: 2
+          template:
+            spec:
+              securityContext:
+                seccompProfile:
+                  type: RuntimeDefault
+              topologySpreadConstraints:
+              - labelSelector:
+                  matchLabels:
+                    gateway.networking.k8s.io/gateway-name: https
+                maxSkew: 1
+                topologyKey: kubernetes.io/hostname
+                whenUnsatisfiable: ScheduleAnyway
+      podDisruptionBudget: |
+        spec:
+          minAvailable: 1
+    kind: ConfigMap
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: ingress.gateways.https.infrastructure
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: https-infrastructure
+      namespace: ingress-gateway
+  10: |
+    apiVersion: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: ingress.gateways.https.listeners.http.redirectToHTTPS
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: redirect-http-to-https-https
+      namespace: ingress-gateway
+    spec:
+      parentRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: https
+          sectionName: http
+      rules:
+        - filters:
+            - requestRedirect:
+                scheme: https
+                statusCode: 301
+              type: RequestRedirect
+  11: |
+    apiVersion: networking.istio.io/v1alpha3
+    kind: EnvoyFilter
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: tls
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: tls-https
+      namespace: ingress-gateway
+    spec:
+      configPatches:
+        - applyTo: FILTER_CHAIN
+          match:
+            context: GATEWAY
+            listener:
+              portNumber: 443
+          patch:
+            operation: MERGE
+            value:
+              transport_socket:
+                name: envoy.transport_sockets.tls
+                typed_config:
+                  '@type': type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+                  common_tls_context:
+                    tls_params:
+                      tls_maximum_protocol_version: TLSv1_3
+                      tls_minimum_protocol_version: TLSv1_2
+      workloadSelector:
+        labels:
+          gateway.networking.k8s.io/gateway-name: https
+  12: |
+    apiVersion: security.istio.io/v1
+    kind: PeerAuthentication
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: mtls.mode
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: mtls-strict
+      namespace: istio-system
+    spec:
+      mtls:
+        mode: STRICT
+  13: |
+    apiVersion: telemetry.istio.io/v1
+    kind: Telemetry
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: accessLogs
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: access-logs-https
+      namespace: ingress-gateway
+    spec:
+      accessLogging:
+        - providers:
+            - name: envoy
+      targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: https
+  14: |
+    apiVersion: telemetry.istio.io/v1
+    kind: Telemetry
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: accessLogs
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: access-logs-default
+      namespace: egress-gateway
+    spec:
+      accessLogging:
+        - providers:
+            - name: envoy
+      targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: default
 full:
   1: |
+    apiVersion: security.istio.io/v1
+    kind: AuthorizationPolicy
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: egress.gateways.default.allowedHosts
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: deny-egress-via-default
+      namespace: egress-gateway
+    spec:
+      action: ALLOW
+      targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: default
+  2: |
+    apiVersion: security.istio.io/v1
+    kind: AuthorizationPolicy
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: egress.gateways.default.allowedHosts.github
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: allow-egress-via-default-to-github
+      namespace: egress-gateway
+    spec:
+      action: ALLOW
+      rules:
+        - to:
+            - operation:
+                ports:
+                  - "443"
+          when:
+            - key: connection.sni
+              values:
+                - api.github.com
+                - github.com
+      targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: default
+  3: |
+    apiVersion: security.istio.io/v1
+    kind: AuthorizationPolicy
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: egress.gateways.default.allowedHosts.os-updates
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: allow-egress-via-default-to-os-updates
+      namespace: egress-gateway
+    spec:
+      action: ALLOW
+      rules:
+        - to:
+            - operation:
+                hosts:
+                  - '*.ubuntu.com'
+                ports:
+                  - "80"
+      targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: default
+  4: |
+    apiVersion: security.istio.io/v1
+    kind: AuthorizationPolicy
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: egress.gateways.default.allowedHosts.package-mirror
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: allow-egress-via-default-to-package-mirror
+      namespace: egress-gateway
+    spec:
+      action: ALLOW
+      rules:
+        - to:
+            - operation:
+                ports:
+                  - "443"
+          when:
+            - key: destination.ip
+              values:
+                - 203.0.113.10/32
+      targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: default
+  5: |
+    apiVersion: security.istio.io/v1
+    kind: AuthorizationPolicy
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: egress.gateways.partner.allowedHosts
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: deny-egress-via-partner
+      namespace: egress-gateway
+    spec:
+      action: ALLOW
+      targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: partner
+  6: |
+    apiVersion: security.istio.io/v1
+    kind: AuthorizationPolicy
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: egress.gateways.partner.allowedHosts.partner-api
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: allow-egress-via-partner-to-partner-api
+      namespace: egress-gateway
+    spec:
+      action: ALLOW
+      rules:
+        - to:
+            - operation:
+                ports:
+                  - "443"
+          when:
+            - key: connection.sni
+              values:
+                - api.partner.example.com
+      targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: partner
+  7: |
+    apiVersion: gateway.networking.k8s.io/v1
+    kind: Gateway
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: egress.gateways.default
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+        istio.io/waypoint-for: service
+      name: default
+      namespace: egress-gateway
+    spec:
+      gatewayClassName: istio-waypoint
+      infrastructure:
+        parametersRef:
+          group: ""
+          kind: ConfigMap
+          name: default-infrastructure
+      listeners:
+        - allowedRoutes:
+            namespaces:
+              from: All
+          name: mesh
+          port: 15008
+          protocol: HBONE
+  8: |
+    apiVersion: v1
+    data:
+      deployment: |
+        spec:
+          replicas: 2
+          template:
+            spec:
+              securityContext:
+                seccompProfile:
+                  type: RuntimeDefault
+              topologySpreadConstraints:
+              - labelSelector:
+                  matchLabels:
+                    gateway.networking.k8s.io/gateway-name: default
+                maxSkew: 1
+                topologyKey: kubernetes.io/hostname
+                whenUnsatisfiable: ScheduleAnyway
+      podDisruptionBudget: |
+        spec:
+          minAvailable: 1
+    kind: ConfigMap
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: egress.gateways.default.infrastructure
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: default-infrastructure
+      namespace: egress-gateway
+  9: |
+    apiVersion: gateway.networking.k8s.io/v1
+    kind: Gateway
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: egress.gateways.partner
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+        istio.io/waypoint-for: service
+      name: partner
+      namespace: egress-gateway
+    spec:
+      gatewayClassName: istio-waypoint
+      infrastructure:
+        parametersRef:
+          group: ""
+          kind: ConfigMap
+          name: partner-infrastructure
+      listeners:
+        - allowedRoutes:
+            namespaces:
+              from: All
+          name: mesh
+          port: 15008
+          protocol: HBONE
+  10: |
+    apiVersion: v1
+    data:
+      deployment: |
+        spec:
+          replicas: 2
+          template:
+            spec:
+              nodeSelector:
+                node.example.mil/exit: "true"
+              securityContext:
+                seccompProfile:
+                  type: RuntimeDefault
+              topologySpreadConstraints:
+              - labelSelector:
+                  matchLabels:
+                    gateway.networking.k8s.io/gateway-name: partner
+                maxSkew: 1
+                topologyKey: kubernetes.io/hostname
+                whenUnsatisfiable: ScheduleAnyway
+      podDisruptionBudget: |
+        spec:
+          minAvailable: 1
+    kind: ConfigMap
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: egress.gateways.partner.infrastructure
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: partner-infrastructure
+      namespace: egress-gateway
+  11: |
     apiVersion: gateway.networking.k8s.io/v1
     kind: Gateway
     metadata:
@@ -248,7 +1013,7 @@ full:
                 kind: Secret
                 name: internal-tls
             mode: Terminate
-  2: |
+  12: |
     apiVersion: gateway.networking.k8s.io/v1
     kind: Gateway
     metadata:
@@ -279,7 +1044,7 @@ full:
           name: postgres
           port: 5432
           protocol: TCP
-  3: |
+  13: |
     apiVersion: gateway.networking.k8s.io/v1
     kind: Gateway
     metadata:
@@ -313,7 +1078,7 @@ full:
           protocol: TLS
           tls:
             mode: Passthrough
-  4: |
+  14: |
     apiVersion: v1
     data:
       deployment: |
@@ -358,7 +1123,7 @@ full:
         helm.sh/chart: boundary-0.1.0
       name: https-infrastructure
       namespace: ingress-gateway
-  5: |
+  15: |
     apiVersion: v1
     data:
       deployment: |
@@ -390,7 +1155,7 @@ full:
         helm.sh/chart: boundary-0.1.0
       name: tcp-infrastructure
       namespace: ingress-gateway
-  6: |
+  16: |
     apiVersion: v1
     data:
       deployment: |
@@ -422,7 +1187,7 @@ full:
         helm.sh/chart: boundary-0.1.0
       name: tls-passthrough-infrastructure
       namespace: ingress-gateway
-  7: |
+  17: |
     apiVersion: gateway.networking.k8s.io/v1
     kind: HTTPRoute
     metadata:
@@ -447,7 +1212,7 @@ full:
                 scheme: https
                 statusCode: 301
               type: RequestRedirect
-  8: |
+  18: |
     apiVersion: networking.istio.io/v1alpha3
     kind: EnvoyFilter
     metadata:
@@ -504,7 +1269,7 @@ full:
       workloadSelector:
         labels:
           gateway.networking.k8s.io/gateway-name: https
-  9: |
+  19: |
     apiVersion: security.istio.io/v1
     kind: PeerAuthentication
     metadata:
@@ -520,7 +1285,7 @@ full:
     spec:
       mtls:
         mode: STRICT
-  10: |
+  20: |
     apiVersion: telemetry.istio.io/v1
     kind: Telemetry
     metadata:
@@ -541,7 +1306,7 @@ full:
         - group: gateway.networking.k8s.io
           kind: Gateway
           name: https
-  11: |
+  21: |
     apiVersion: telemetry.istio.io/v1
     kind: Telemetry
     metadata:
@@ -562,7 +1327,7 @@ full:
         - group: gateway.networking.k8s.io
           kind: Gateway
           name: tcp
-  12: |
+  22: |
     apiVersion: telemetry.istio.io/v1
     kind: Telemetry
     metadata:
@@ -583,8 +1348,129 @@ full:
         - group: gateway.networking.k8s.io
           kind: Gateway
           name: tls-passthrough
+  23: |
+    apiVersion: telemetry.istio.io/v1
+    kind: Telemetry
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: accessLogs
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: access-logs-default
+      namespace: egress-gateway
+    spec:
+      accessLogging:
+        - providers:
+            - name: envoy
+      targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: default
+  24: |
+    apiVersion: telemetry.istio.io/v1
+    kind: Telemetry
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: accessLogs
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: access-logs-partner
+      namespace: egress-gateway
+    spec:
+      accessLogging:
+        - providers:
+            - name: envoy
+      targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: partner
 minimal:
   1: |
+    apiVersion: security.istio.io/v1
+    kind: AuthorizationPolicy
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: egress.gateways.default.allowedHosts
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: deny-egress-via-default
+      namespace: egress-gateway
+    spec:
+      action: ALLOW
+      targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: default
+  2: |
+    apiVersion: gateway.networking.k8s.io/v1
+    kind: Gateway
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: egress.gateways.default
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+        istio.io/waypoint-for: service
+      name: default
+      namespace: egress-gateway
+    spec:
+      gatewayClassName: istio-waypoint
+      infrastructure:
+        parametersRef:
+          group: ""
+          kind: ConfigMap
+          name: default-infrastructure
+      listeners:
+        - allowedRoutes:
+            namespaces:
+              from: All
+          name: mesh
+          port: 15008
+          protocol: HBONE
+  3: |
+    apiVersion: v1
+    data:
+      deployment: |
+        spec:
+          replicas: 2
+          template:
+            spec:
+              securityContext:
+                seccompProfile:
+                  type: RuntimeDefault
+              topologySpreadConstraints:
+              - labelSelector:
+                  matchLabels:
+                    gateway.networking.k8s.io/gateway-name: default
+                maxSkew: 1
+                topologyKey: kubernetes.io/hostname
+                whenUnsatisfiable: ScheduleAnyway
+      podDisruptionBudget: |
+        spec:
+          minAvailable: 1
+    kind: ConfigMap
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: egress.gateways.default.infrastructure
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: default-infrastructure
+      namespace: egress-gateway
+  4: |
     apiVersion: gateway.networking.k8s.io/v1
     kind: Gateway
     metadata:
@@ -629,7 +1515,7 @@ minimal:
                 kind: Secret
                 name: apps-tls
             mode: Terminate
-  2: |
+  5: |
     apiVersion: v1
     data:
       deployment: |
@@ -661,7 +1547,7 @@ minimal:
         helm.sh/chart: boundary-0.1.0
       name: https-infrastructure
       namespace: ingress-gateway
-  3: |
+  6: |
     apiVersion: gateway.networking.k8s.io/v1
     kind: HTTPRoute
     metadata:
@@ -686,7 +1572,7 @@ minimal:
                 scheme: https
                 statusCode: 301
               type: RequestRedirect
-  4: |
+  7: |
     apiVersion: networking.istio.io/v1alpha3
     kind: EnvoyFilter
     metadata:
@@ -720,7 +1606,7 @@ minimal:
       workloadSelector:
         labels:
           gateway.networking.k8s.io/gateway-name: https
-  5: |
+  8: |
     apiVersion: security.istio.io/v1
     kind: PeerAuthentication
     metadata:
@@ -736,7 +1622,7 @@ minimal:
     spec:
       mtls:
         mode: STRICT
-  6: |
+  9: |
     apiVersion: telemetry.istio.io/v1
     kind: Telemetry
     metadata:
@@ -757,8 +1643,108 @@ minimal:
         - group: gateway.networking.k8s.io
           kind: Gateway
           name: https
+  10: |
+    apiVersion: telemetry.istio.io/v1
+    kind: Telemetry
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: accessLogs
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: access-logs-default
+      namespace: egress-gateway
+    spec:
+      accessLogging:
+        - providers:
+            - name: envoy
+      targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: default
 permissive:
   1: |
+    apiVersion: security.istio.io/v1
+    kind: AuthorizationPolicy
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: egress.gateways.default.allowedHosts
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: deny-egress-via-default
+      namespace: egress-gateway
+    spec:
+      action: ALLOW
+      targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: default
+  2: |
+    apiVersion: gateway.networking.k8s.io/v1
+    kind: Gateway
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: egress.gateways.default
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+        istio.io/waypoint-for: service
+      name: default
+      namespace: egress-gateway
+    spec:
+      gatewayClassName: istio-waypoint
+      infrastructure:
+        parametersRef:
+          group: ""
+          kind: ConfigMap
+          name: default-infrastructure
+      listeners:
+        - allowedRoutes:
+            namespaces:
+              from: All
+          name: mesh
+          port: 15008
+          protocol: HBONE
+  3: |
+    apiVersion: v1
+    data:
+      deployment: |
+        spec:
+          replicas: 2
+          template:
+            spec:
+              securityContext:
+                seccompProfile:
+                  type: RuntimeDefault
+              topologySpreadConstraints:
+              - labelSelector:
+                  matchLabels:
+                    gateway.networking.k8s.io/gateway-name: default
+                maxSkew: 1
+                topologyKey: kubernetes.io/hostname
+                whenUnsatisfiable: ScheduleAnyway
+      podDisruptionBudget: |
+        spec:
+          minAvailable: 1
+    kind: ConfigMap
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: egress.gateways.default.infrastructure
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: default-infrastructure
+      namespace: egress-gateway
+  4: |
     apiVersion: gateway.networking.k8s.io/v1
     kind: Gateway
     metadata:
@@ -803,7 +1789,7 @@ permissive:
                 kind: Secret
                 name: apps-tls
             mode: Terminate
-  2: |
+  5: |
     apiVersion: v1
     data:
       deployment: |
@@ -835,7 +1821,7 @@ permissive:
         helm.sh/chart: boundary-0.1.0
       name: https-infrastructure
       namespace: ingress-gateway
-  3: |
+  6: |
     apiVersion: gateway.networking.k8s.io/v1
     kind: HTTPRoute
     metadata:
@@ -860,7 +1846,7 @@ permissive:
                 scheme: https
                 statusCode: 301
               type: RequestRedirect
-  4: |
+  7: |
     apiVersion: networking.istio.io/v1alpha3
     kind: EnvoyFilter
     metadata:
@@ -894,7 +1880,7 @@ permissive:
       workloadSelector:
         labels:
           gateway.networking.k8s.io/gateway-name: https
-  5: |
+  8: |
     apiVersion: security.istio.io/v1
     kind: PeerAuthentication
     metadata:
@@ -910,7 +1896,7 @@ permissive:
     spec:
       mtls:
         mode: PERMISSIVE
-  6: |
+  9: |
     apiVersion: telemetry.istio.io/v1
     kind: Telemetry
     metadata:
@@ -931,3 +1917,24 @@ permissive:
         - group: gateway.networking.k8s.io
           kind: Gateway
           name: https
+  10: |
+    apiVersion: telemetry.istio.io/v1
+    kind: Telemetry
+    metadata:
+      annotations:
+        boundary.posture.dev/rule: accessLogs
+      labels:
+        app.kubernetes.io/instance: boundary
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: boundary
+        helm.sh/chart: boundary-0.1.0
+      name: access-logs-default
+      namespace: egress-gateway
+    spec:
+      accessLogging:
+        - providers:
+            - name: envoy
+      targetRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: default

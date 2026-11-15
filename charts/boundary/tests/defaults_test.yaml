@@ -6,7 +6,7 @@ release:
   name: boundary
   namespace: istio-system
 tests:
-  - it: renders mtls-strict and the https gateway with its objects
+  - it: renders mtls-strict, the https gateway, and the default waypoint, with their objects
     asserts:
       - hasDocuments: { count: 1 }
         template: templates/istio/peerauthentication.yaml
@@ -24,8 +24,16 @@ tests:
         template: templates/istio/ingress-redirect.yaml
       - hasDocuments: { count: 1 }
         template: templates/istio/ingress-tls.yaml
-      - hasDocuments: { count: 1 }
+      - hasDocuments: { count: 2 }
         template: templates/istio/telemetry.yaml
+      # The default egress waypoint: its Gateway and ConfigMap, and the allow-nothing policy
+      # (allowedHosts is empty by default).
+      - hasDocuments: { count: 2 }
+        template: templates/istio/egress-waypoint.yaml
+      - hasDocuments: { count: 1 }
+        template: templates/istio/egress-authorization.yaml
+      - equal: { path: metadata.name, value: deny-egress-via-default }
+        template: templates/istio/egress-authorization.yaml
 
   - it: the PeerAuthentication carries the labels and the rule annotation
     template: templates/istio/peerauthentication.yaml

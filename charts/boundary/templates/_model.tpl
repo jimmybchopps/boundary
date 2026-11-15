@@ -36,7 +36,10 @@ Shape:
     namespace: egress-gateway
     default: default                      # the enabled gateway with default: true ("" if none)
     gateways:                             # enabled only, sorted by name
-      - name, path, default, exitNodes, infrastructure
+      - name, path, default, exitNodes
+        infrastructure: { ... }           # as for ingress; nodeSelector includes exitNodes
+        infrastructureName, accessLogsName  # object names
+        denyName                          # deny-egress-via-<gateway>: the allow-nothing policy
         allowedHosts:                     # enabled only, sorted by name
           - name, path, policyName        # allow-egress-via-<gateway>-to-<entry>
             hosts | addresses, ports, protocol
@@ -133,16 +136,41 @@ formatting them with printf.
       {{- $hosts = append $hosts $out -}}
     {{- end -}}
   {{- end -}}
+  {{- /* exitNodes joins the infrastructure's nodeSelector; a key set in both must agree. */ -}}
+  {{- $exitNodes := $gateway.exitNodes | default dict -}}
+  {{- $infrastructure := include "boundary.infrastructure" (dict "values" $gateway.infrastructure "path" (printf "%s.infrastructure" $gatewayPath)) | fromJson -}}
+  {{- range $key, $value := $exitNodes -}}
+    {{- if and (hasKey $infrastructure.nodeSelector $key) (ne (toString (get $infrastructure.nodeSelector $key)) (toString $value)) -}}
+      {{- fail (printf "boundary: %s.exitNodes: %s is %q here and %q in infrastructure.nodeSelector" $gatewayPath $key (toString $value) (toString (get $infrastructure.nodeSelector $key))) -}}
+    {{- end -}}
+  {{- end -}}
+  {{- $_ := set $infrastructure "nodeSelector" (merge (deepCopy $exitNodes) $infrastructure.nodeSelector) -}}
   {{- if eq (include "boundary.enabled" $gateway) "true" -}}
     {{- $isDefault := eq (toString $gateway.default) "true" -}}
     {{- if $isDefault -}}{{- $defaults = append $defaults $gatewayName -}}{{- end -}}
+    {{- $name := include "boundary.name" (dict "name" $gatewayName "path" $gatewayPath) -}}
     {{- $egressGateways = append $egressGateways (dict
-          "name" (include "boundary.name" (dict "name" $gatewayName "path" $gatewayPath))
+          "name" $name
           "path" $gatewayPath
           "default" $isDefault
-          "exitNodes" ($gateway.exitNodes | default dict)
-          "infrastructure" (include "boundary.infrastructure" (dict "values" $gateway.infrastructure "path" (printf "%s.infrastructure" $gatewayPath)) | fromJson)
+          "exitNodes" $exitNodes
+          "infrastructure" $infrastructure
+          "infrastructureName" (include "boundary.name" (dict "name" (printf "%s-infrastructure" $name) "path" $gatewayPath))
+          "accessLogsName" (include "boundary.name" (dict "name" (printf "access-logs-%s" $name) "path" $gatewayPath))
+          "denyName" (include "boundary.name" (dict "name" (printf "deny-egress-via-%s" $name) "path" $gatewayPath))
           "allowedHosts" $hosts) -}}
+  {{- end -}}
+{{- end -}}
+{{- $ingressNamespace := $ingressValues.namespace | default "ingress-gateway" -}}
+{{- $egressNamespace := $egressValues.namespace | default "egress-gateway" -}}
+{{- if eq $ingressNamespace $egressNamespace -}}
+  {{- range $egressGateways -}}
+    {{- $egressName := .name -}}
+    {{- range $ingressGateways -}}
+      {{- if eq .name $egressName -}}
+        {{- fail (printf "boundary: egress.gateways.%s: ingress.gateways.%s has the same name, and both are in namespace %s, so their objects would collide; rename one or use separate namespaces" $egressName $egressName $egressNamespace) -}}
+      {{- end -}}
+    {{- end -}}
   {{- end -}}
 {{- end -}}
 {{- if gt (len $defaults) 1 -}}
@@ -167,10 +195,10 @@ formatting them with printf.
       "accessLogs" (dict "enabled" (ne (toString (($v.accessLogs | default dict).enabled)) "false"))
       "tls" $tls
       "ingress" (dict
-        "namespace" ($ingressValues.namespace | default "ingress-gateway")
+        "namespace" $ingressNamespace
         "gateways" $ingressGateways)
       "egress" (dict
-        "namespace" ($egressValues.namespace | default "egress-gateway")
+        "namespace" $egressNamespace
         "default" (first $defaults | default "")
         "gateways" $egressGateways) -}}
 {{- toJson $model -}}

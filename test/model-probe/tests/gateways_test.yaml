@@ -144,6 +144,22 @@ tests:
       - equal: { path: exitNodes, value: {} }
       - equal: { path: allowedHosts, value: [] }
       - equal: { path: infrastructure.replicas, value: 2 }
+      - equal: { path: infrastructure.nodeSelector, value: {} }
+      - equal: { path: infrastructureName, value: default-infrastructure }
+      - equal: { path: accessLogsName, value: access-logs-default }
+      - equal: { path: denyName, value: deny-egress-via-default }
+
+  - it: exitNodes joins the egress gateway's infrastructure nodeSelector
+    set:
+      boundary.egress.gateways.default:
+        exitNodes: { node.example.mil/exit: "true" }
+        infrastructure: { nodeSelector: { kubernetes.io/os: linux, node.example.mil/exit: "true" } }
+    documentSelector: { path: path, value: egress.gateways.default }
+    asserts:
+      - equal: { path: exitNodes, value: { node.example.mil/exit: "true" } }
+      - equal:
+          path: infrastructure.nodeSelector
+          value: { kubernetes.io/os: linux, node.example.mil/exit: "true" }
 
   - it: the default egress gateway can be another one
     set:

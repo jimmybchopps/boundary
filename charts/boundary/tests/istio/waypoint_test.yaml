@@ -1,0 +1,109 @@
+suite: egress waypoint Gateway and infrastructure (egress.gateways)
+templates:
+  - templates/istio/egress-waypoint.yaml
+tests:
+  - it: the default waypoint, for services, admitting every namespace on HBONE
+    documentSelector: { path: kind, value: Gateway }
+    asserts:
+      - isAPIVersion: { of: gateway.networking.k8s.io/v1 }
+      - equal: { path: metadata.name, value: default }
+      - equal: { path: metadata.namespace, value: egress-gateway }
+      - equal: { path: "metadata.labels[\"istio.io/waypoint-for\"]", value: service }
+      - equal: { path: metadata.annotations, value: { boundary.posture.dev/rule: egress.gateways.default } }
+      - equal: { path: spec.gatewayClassName, value: istio-waypoint }
+      - equal:
+          path: spec.infrastructure
+          value: { parametersRef: { group: "", kind: ConfigMap, name: default-infrastructure } }
+      - equal:
+          path: spec.listeners
+          value:
+            - name: mesh
+              port: 15008
+              protocol: HBONE
+              allowedRoutes: { namespaces: { from: All } }
+
+  - it: one waypoint and ConfigMap per enabled gateway, in egress.namespace
+    set:
+      egress.namespace: egress-alt
+      egress.gateways.second: {}
+      egress.gateways.off: { enabled: false }
+    asserts:
+      - hasDocuments: { count: 4 }
+      - equal: { path: metadata.namespace, value: egress-alt }
+      - equal: { path: metadata.name, value: second }
+        documentSelector: { path: metadata.name, value: second }
+      - equal: { path: spec.infrastructure.parametersRef.name, value: second-infrastructure }
+        documentSelector: { path: metadata.name, value: second }
+
+  - it: no enabled gateway renders nothing
+    set:
+      egress.gateways.default.enabled: false
+    asserts:
+      - hasDocuments: { count: 0 }
+
+  - it: the ConfigMap has the infrastructure defaults and no service patch
+    documentSelector: { path: kind, value: ConfigMap }
+    asserts:
+      - equal: { path: metadata.name, value: default-infrastructure }
+      - equal: { path: metadata.annotations, value: { boundary.posture.dev/rule: egress.gateways.default.infrastructure } }
+      - equal:
+          path: data.deployment
+          value: |
+            spec:
+              replicas: 2
+              template:
+                spec:
+                  securityContext:
+                    seccompProfile:
+                      type: RuntimeDefault
+                  topologySpreadConstraints:
+                  - labelSelector:
+                      matchLabels:
+                        gateway.networking.k8s.io/gateway-name: default
+                    maxSkew: 1
+                    topologyKey: kubernetes.io/hostname
+                    whenUnsatisfiable: ScheduleAnyway
+      - equal:
+          path: data.podDisruptionBudget
+          value: |
+            spec:
+              minAvailable: 1
+      - notExists: { path: data.service }
+      - notExists: { path: data.horizontalPodAutoscaler }
+
+  - it: exitNodes pins the waypoint with a nodeSelector
+    documentSelector: { path: kind, value: ConfigMap }
+    set:
+      egress.gateways.default.exitNodes: { node.example.mil/exit: "true" }
+    asserts:
+      - matchRegex: { path: data.deployment, pattern: "nodeSelector:\\n        node.example.mil/exit: \"true\"" }
+
+  - it: exitNodes joins infrastructure.nodeSelector
+    documentSelector: { path: kind, value: ConfigMap }
+    set:
+      egress.gateways.default.exitNodes: { node.example.mil/exit: "true" }
+      egress.gateways.default.infrastructure.nodeSelector:
+        kubernetes.io/os: linux
+        node.example.mil/exit: "true"
+    asserts:
+      - matchRegex:
+          path: data.deployment
+          pattern: "nodeSelector:\\n        kubernetes.io/os: linux\\n        node.example.mil/exit: \"true\"\\n"
+
+  - it: without exitNodes or a nodeSelector, the pod isn't pinned
+    documentSelector: { path: kind, value: ConfigMap }
+    asserts:
+      - notMatchRegex: { path: data.deployment, pattern: nodeSelector }
+
+  - it: autoscaling renders an HPA and leaves replicas to it
+    documentSelector: { path: kind, value: ConfigMap }
+    set:
+      egress.gateways.default.infrastructure.autoscaling: { enabled: true, minReplicas: 2, maxReplicas: 4 }
+    asserts:
+      - equal:
+          path: data.horizontalPodAutoscaler
+          value: |
+            spec:
+              maxReplicas: 4
+              minReplicas: 2
+      - notMatchRegex: { path: data.deployment, pattern: replicas }

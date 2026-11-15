@@ -427,3 +427,32 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: 'boundary: ingress.gateways.https.service: loadBalancerIP applies only to type LoadBalancer; type is ClusterIP'
+
+  # Egress gateways (phase 3).
+  - it: exitNodes and infrastructure.nodeSelector disagreeing on a key fails
+    set:
+      egress.gateways.default:
+        exitNodes: { node.example.mil/exit: "true" }
+        infrastructure: { nodeSelector: { node.example.mil/exit: "false" } }
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: egress.gateways.default.exitNodes: node.example.mil/exit is "true" here and "false" in infrastructure.nodeSelector'
+
+  - it: an ingress and an egress gateway with the same name in one namespace fail
+    set:
+      ingress.namespace: gateways
+      egress.namespace: gateways
+      ingress.gateways.default:
+        listeners:
+          http: { port: 80, protocol: HTTP }
+    asserts:
+      - failedTemplate:
+          errorPattern: 'boundary: egress.gateways.default: ingress.gateways.default has the same name, and both are in namespace gateways'
+
+  - it: the same names in separate namespaces are fine
+    set:
+      ingress.gateways.default:
+        listeners:
+          http: { port: 80, protocol: HTTP }
+    asserts:
+      - notFailedTemplate: {}

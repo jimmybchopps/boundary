@@ -3,8 +3,10 @@
 #
 # Setup order (MESH=istio), as on a real cluster (CLAUDE.md, prerequisites):
 #   cluster, the Gateway API CRDs (standard), Istio ambient, the gateway namespaces in the
-#   mesh with their posture releases; then each scenario installs this chart and removes it
-#   afterwards. Needs Docker and openssl (the ingress scenarios' certificates).
+#   mesh with their posture releases, and the external hosts the egress scenarios reach (Docker
+#   containers on the cluster's network, named under e2e.test); then each scenario installs
+#   this chart and removes it afterwards. Needs Docker and openssl (the scenarios'
+#   certificates).
 #
 # Usage: test/e2e/run.sh <istio> [scenario...]
 #   Normally run through `make e2e MESH=istio`, which installs the pinned tools, downloads the
@@ -51,7 +53,9 @@ teardown() {
   rm -rf "$CERTS"
   if [[ ${E2E_KEEP:-0} == 1 ]]; then
     log "keeping cluster ${CLUSTER} (E2E_KEEP=1); delete it with: $K3D cluster delete ${CLUSTER}"
+    info "and the external hosts with: docker rm -f ${CLUSTER}-ext-a ${CLUSTER}-ext-b ${CLUSTER}-ext-tls"
   else
+    stop_external
     delete_cluster
   fi
 }
@@ -67,12 +71,15 @@ else
   install_istio
   gateway_namespaces
 fi
+# Every run (a reused cluster too): the certificates are new, so the hosts are restarted.
+start_external
 
 scenarios=("$@")
 if [[ ${#scenarios[@]} -eq 0 ]]; then
   scenarios=(mtls-strict mtls-permissive
     ingress-https ingress-tls-settings ingress-cert-rotation ingress-passthrough ingress-tcp
-    ingress-infrastructure)
+    ingress-infrastructure
+    egress-hosts egress-two-gateways egress-exit-nodes egress-infrastructure)
 fi
 for s in "${scenarios[@]}"; do
   run_scenario "$s"

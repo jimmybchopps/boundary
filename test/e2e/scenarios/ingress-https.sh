@@ -22,5 +22,5 @@ extra() {
   check "http: every request gets a 301 to https" \
     retry redirects_to https://api.apps.e2e.test/ client/x https api.apps.e2e.test 80 http://api.apps.e2e.test/
   check "accessLogs: the gateway logged the request" \
-    retry gateway_logs_have https api.apps.e2e.test
+    retry gateway_logs_have "$INGRESS_NAMESPACE" https api.apps.e2e.test
 }
