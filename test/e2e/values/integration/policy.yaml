@@ -2,8 +2,20 @@
 # (enforcement: enforce is the chart's default and stays), plus what a site running boundary
 # sets (README, "Running under the policy chart"). Nothing here loosens a default for boundary's
 # sake: the gateway and waypoint pods are admitted with only the exception posture's
-# istio-ingress and istio-egress profiles carry.
+# istio-ingress and istio-egress profiles carry. The e2e workloads meet every default-on policy
+# (test/e2e/lib.sh, workload).
 policies:
+  # Default on, at audit: enforced here, as posture's e2e does.
+  disallow-default-service-account: { action: enforce }
+  disallow-rbac-escalation-verbs: { action: enforce }
+  disallow-secrets-in-env: { action: enforce }
+  disallow-shared-process-namespace: { action: enforce }
+  # Default on, at audit, and left at audit until the posture pin is 0.3.0: posture 0.2.0's
+  # istio-system profile doesn't except istiod and ztunnel from these two, so enforcing them
+  # would refuse the control plane. The gateway and waypoint pods meet both (the infrastructure
+  # ConfigMap), which integration.sh checks on the pods (admission_checks).
+  #   require-probes
+  #   disallow-automount-service-account-token
   # Baked-in: the registries the run's images come from, fully qualified (prefix match).
   restrict-image-registries:
     registries:

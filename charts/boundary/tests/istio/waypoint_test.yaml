@@ -45,7 +45,7 @@ tests:
     asserts:
       - hasDocuments: { count: 0 }
 
-  - it: the ConfigMap has the infrastructure defaults and no service patch
+  - it: the ConfigMap has the infrastructure defaults (no API token, the liveness probe) and no service patch
     documentSelector: { path: kind, value: ConfigMap }
     asserts:
       - equal: { path: metadata.name, value: default-infrastructure }
@@ -57,6 +57,17 @@ tests:
               replicas: 2
               template:
                 spec:
+                  automountServiceAccountToken: false
+                  containers:
+                  - livenessProbe:
+                      failureThreshold: 8
+                      httpGet:
+                        path: /healthz/ready
+                        port: 15021
+                        scheme: HTTP
+                      periodSeconds: 15
+                      timeoutSeconds: 3
+                    name: istio-proxy
                   securityContext:
                     seccompProfile:
                       type: RuntimeDefault

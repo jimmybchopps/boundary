@@ -4,7 +4,7 @@ templates:
 tests:
   - it: defaults
     asserts:
-      - matchRegexRaw: { pattern: 'boundary 0\.1\.0 \(mesh: istio, ingress: istio\)' }
+      - matchRegexRaw: { pattern: 'boundary 0\.1\.1 \(mesh: istio, ingress: istio\)' }
       - matchRegexRaw: { pattern: 'mTLS: +STRICT \(PeerAuthentication mtls-strict\)' }
       - matchRegexRaw: { pattern: 'default deny: +off' }
       - matchRegexRaw: { pattern: 'Gateway API CRDs, v1\.6\.0 or later, standard channel' }

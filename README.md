@@ -49,7 +49,7 @@ This chart installs none of these:
 From a release, with the package checked against the release's `SHA256SUMS`:
 
 ```sh
-v=0.1.0
+v=0.1.1
 base=https://github.com/jimmybchopps/boundary/releases/download/v$v
 curl -fsSLO "$base/boundary-$v.tgz" && curl -fsSLO "$base/SHA256SUMS"
 sha256sum -c SHA256SUMS
@@ -106,8 +106,11 @@ boundary's gateway and waypoint pods pass the `policy` chart's defaults, enforce
   every verb on `ingresses/status`), so without this istiod's install is refused. Both names end
   in istiod's namespace; with a revisioned or relocated istiod, check the names its chart
   renders.
-- **`require-probes`** (audit by default) reports istiod, which has no liveness probe. It warns
-  and refuses nothing.
+- **`require-probes`** and **`disallow-automount-service-account-token`** (both audit by
+  default) report istiod and ztunnel, whose charts set no liveness probe and leave the API
+  token mounted. They warn and refuse nothing; to enforce them, run `posture` 0.3.0 or later in
+  `istio-system`, whose `istio-system` profile excepts the two. boundary's gateways and
+  waypoints meet both.
 - **`restrict-loadbalancer-services`**: `namespaces: [ingress-gateway]` (`ingress.namespace`),
   so the ingress gateways' LoadBalancer Services are allowed there and nowhere else.
 - **`restrict-route-hostnames`** (optional, policy 0.2.1 or later when turned on): list the
@@ -300,7 +303,8 @@ both.
 | `restrict-volume-types` | emptyDir, downwardAPI, projected, configMap (waypoint) | passes |
 
 **Optional policies that are on by default.** The integration test checks these with the
-`policy` chart's defaults enforced:
+`policy` chart's defaults enforced. The last two default to audit; the integration run checks
+them on the pods directly:
 
 | Policy | Generated pod | Result |
 |---|---|---|
@@ -308,7 +312,8 @@ both.
 | `require-standard-labels` | Istio sets no `app.kubernetes.io/name` | **fixed**: the Gateway's `spec.infrastructure.labels` sets `app.kubernetes.io/name: <gateway>` and `app.kubernetes.io/component: ingress-gateway` or `egress-waypoint` |
 | `require-image-digest` | the proxy image as Istio is configured | site-specific: install Istio with `global.proxy.image` pinned by digest |
 | `restrict-loadbalancer-services` | the ingress gateway's default `LoadBalancer` Service | site-specific: list the ingress namespace in the policy's `namespaces` (waypoints use ClusterIP) |
-| `require-probes` (audit by default) | readiness and startup probes, but no liveness probe | reported, not refused |
+| `require-probes` (audit by default) | Istio sets startup and readiness probes, but no liveness probe | **fixed**: the ConfigMap gives `istio-proxy` a liveness probe on Istio's own `/healthz/ready` (15021), with a longer allowance than readiness (8 failures, 15 seconds apart) |
+| `disallow-automount-service-account-token` (audit by default) | **unset by Istio** | **fixed**: the ConfigMap sets `automountServiceAccountToken: false`; the proxy never calls the Kubernetes API (it authenticates to istiod with the projected `istio-token`, and istiod sends it its certificates) |
 
 `require-read-only-root-filesystem` and `require-resource-limits` pass. Istio sets a read-only
 root filesystem. The gateway's default resources (`global.proxy.resources`) include CPU and

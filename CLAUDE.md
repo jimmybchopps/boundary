@@ -174,8 +174,10 @@ Each entry has `enabled` (default true), exactly one of `hosts` (DNS names, wild
   set when a namespace is created, never in this chart's values.
 - `infrastructure` renders a ConfigMap referenced by the Gateway's
   `spec.infrastructure.parametersRef`, patching the Deployment, Service, autoscaler, and
-  disruption budget Istio generates, including the security-context settings that keep the pods
-  compliant with the `policy` chart.
+  disruption budget Istio generates, including what keeps the pods compliant with the `policy`
+  chart: the seccomp profile, `automountServiceAccountToken: false`, and a liveness probe on
+  `istio-proxy` (`/healthz/ready` on 15021, the endpoint of Istio's own readiness probe). The
+  same patch serves egress waypoints.
 
 ### TLS settings (Istio)
 

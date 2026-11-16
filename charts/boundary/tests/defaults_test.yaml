@@ -44,7 +44,7 @@ tests:
       - equal:
           path: metadata.labels
           value:
-            helm.sh/chart: boundary-0.1.0
+            helm.sh/chart: boundary-0.1.1
             app.kubernetes.io/name: boundary
             app.kubernetes.io/instance: boundary
             app.kubernetes.io/managed-by: Helm

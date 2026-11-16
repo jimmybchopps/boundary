@@ -9,7 +9,7 @@ deny-all:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: deny-all
       namespace: istio-system
     spec: {}
@@ -23,7 +23,7 @@ deny-all:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: deny-egress-via-default
       namespace: egress-gateway
     spec:
@@ -42,7 +42,7 @@ deny-all:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
         istio.io/waypoint-for: service
       name: default
       namespace: egress-gateway
@@ -71,6 +71,17 @@ deny-all:
           replicas: 2
           template:
             spec:
+              automountServiceAccountToken: false
+              containers:
+              - livenessProbe:
+                  failureThreshold: 8
+                  httpGet:
+                    path: /healthz/ready
+                    port: 15021
+                    scheme: HTTP
+                  periodSeconds: 15
+                  timeoutSeconds: 3
+                name: istio-proxy
               securityContext:
                 seccompProfile:
                   type: RuntimeDefault
@@ -92,7 +103,7 @@ deny-all:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: default-infrastructure
       namespace: egress-gateway
   5: |
@@ -106,7 +117,7 @@ deny-all:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: https
       namespace: ingress-gateway
     spec:
@@ -151,6 +162,17 @@ deny-all:
           replicas: 2
           template:
             spec:
+              automountServiceAccountToken: false
+              containers:
+              - livenessProbe:
+                  failureThreshold: 8
+                  httpGet:
+                    path: /healthz/ready
+                    port: 15021
+                    scheme: HTTP
+                  periodSeconds: 15
+                  timeoutSeconds: 3
+                name: istio-proxy
               securityContext:
                 seccompProfile:
                   type: RuntimeDefault
@@ -172,7 +194,7 @@ deny-all:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: https-infrastructure
       namespace: ingress-gateway
   7: |
@@ -185,7 +207,7 @@ deny-all:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: redirect-http-to-https-https
       namespace: ingress-gateway
     spec:
@@ -210,7 +232,7 @@ deny-all:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: tls-https
       namespace: ingress-gateway
     spec:
@@ -244,7 +266,7 @@ deny-all:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: mtls-strict
       namespace: istio-system
     spec:
@@ -260,7 +282,7 @@ deny-all:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: access-logs-https
       namespace: ingress-gateway
     spec:
@@ -281,7 +303,7 @@ deny-all:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: access-logs-default
       namespace: egress-gateway
     spec:
@@ -303,7 +325,7 @@ egress:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: deny-egress-via-default
       namespace: egress-gateway
     spec:
@@ -322,7 +344,7 @@ egress:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: allow-egress-via-default-to-container-registries
       namespace: egress-gateway
     spec:
@@ -351,7 +373,7 @@ egress:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: allow-egress-via-default-to-github
       namespace: egress-gateway
     spec:
@@ -381,7 +403,7 @@ egress:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: allow-egress-via-default-to-os-updates
       namespace: egress-gateway
     spec:
@@ -408,7 +430,7 @@ egress:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: allow-egress-via-default-to-package-mirror
       namespace: egress-gateway
     spec:
@@ -438,7 +460,7 @@ egress:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
         istio.io/waypoint-for: service
       name: default
       namespace: egress-gateway
@@ -467,6 +489,17 @@ egress:
           replicas: 3
           template:
             spec:
+              automountServiceAccountToken: false
+              containers:
+              - livenessProbe:
+                  failureThreshold: 8
+                  httpGet:
+                    path: /healthz/ready
+                    port: 15021
+                    scheme: HTTP
+                  periodSeconds: 15
+                  timeoutSeconds: 3
+                name: istio-proxy
               nodeSelector:
                 node-role.example.mil/egress: "true"
               securityContext:
@@ -494,7 +527,7 @@ egress:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: default-infrastructure
       namespace: egress-gateway
   8: |
@@ -508,7 +541,7 @@ egress:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: https
       namespace: ingress-gateway
     spec:
@@ -551,6 +584,17 @@ egress:
           replicas: 2
           template:
             spec:
+              automountServiceAccountToken: false
+              containers:
+              - livenessProbe:
+                  failureThreshold: 8
+                  httpGet:
+                    path: /healthz/ready
+                    port: 15021
+                    scheme: HTTP
+                  periodSeconds: 15
+                  timeoutSeconds: 3
+                name: istio-proxy
               securityContext:
                 seccompProfile:
                   type: RuntimeDefault
@@ -572,7 +616,7 @@ egress:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: https-infrastructure
       namespace: ingress-gateway
   10: |
@@ -585,7 +629,7 @@ egress:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: redirect-http-to-https-https
       namespace: ingress-gateway
     spec:
@@ -610,7 +654,7 @@ egress:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: tls-https
       namespace: ingress-gateway
     spec:
@@ -644,7 +688,7 @@ egress:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: mtls-strict
       namespace: istio-system
     spec:
@@ -660,7 +704,7 @@ egress:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: access-logs-https
       namespace: ingress-gateway
     spec:
@@ -681,7 +725,7 @@ egress:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: access-logs-default
       namespace: egress-gateway
     spec:
@@ -703,7 +747,7 @@ full:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: deny-egress-via-default
       namespace: egress-gateway
     spec:
@@ -722,7 +766,7 @@ full:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: allow-egress-via-default-to-github
       namespace: egress-gateway
     spec:
@@ -751,7 +795,7 @@ full:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: allow-egress-via-default-to-os-updates
       namespace: egress-gateway
     spec:
@@ -777,7 +821,7 @@ full:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: allow-egress-via-default-to-package-mirror
       namespace: egress-gateway
     spec:
@@ -805,7 +849,7 @@ full:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: deny-egress-via-partner
       namespace: egress-gateway
     spec:
@@ -824,7 +868,7 @@ full:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: allow-egress-via-partner-to-partner-api
       namespace: egress-gateway
     spec:
@@ -852,7 +896,7 @@ full:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
         istio.io/waypoint-for: service
       name: default
       namespace: egress-gateway
@@ -881,6 +925,17 @@ full:
           replicas: 2
           template:
             spec:
+              automountServiceAccountToken: false
+              containers:
+              - livenessProbe:
+                  failureThreshold: 8
+                  httpGet:
+                    path: /healthz/ready
+                    port: 15021
+                    scheme: HTTP
+                  periodSeconds: 15
+                  timeoutSeconds: 3
+                name: istio-proxy
               securityContext:
                 seccompProfile:
                   type: RuntimeDefault
@@ -902,7 +957,7 @@ full:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: default-infrastructure
       namespace: egress-gateway
   9: |
@@ -915,7 +970,7 @@ full:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
         istio.io/waypoint-for: service
       name: partner
       namespace: egress-gateway
@@ -944,6 +999,17 @@ full:
           replicas: 2
           template:
             spec:
+              automountServiceAccountToken: false
+              containers:
+              - livenessProbe:
+                  failureThreshold: 8
+                  httpGet:
+                    path: /healthz/ready
+                    port: 15021
+                    scheme: HTTP
+                  periodSeconds: 15
+                  timeoutSeconds: 3
+                name: istio-proxy
               nodeSelector:
                 node.example.mil/exit: "true"
               securityContext:
@@ -967,7 +1033,7 @@ full:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: partner-infrastructure
       namespace: egress-gateway
   11: |
@@ -981,7 +1047,7 @@ full:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: https
       namespace: ingress-gateway
     spec:
@@ -1045,7 +1111,7 @@ full:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: tcp
       namespace: ingress-gateway
     spec:
@@ -1079,7 +1145,7 @@ full:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: tls-passthrough
       namespace: ingress-gateway
     spec:
@@ -1112,8 +1178,17 @@ full:
         spec:
           template:
             spec:
+              automountServiceAccountToken: false
               containers:
-              - name: istio-proxy
+              - livenessProbe:
+                  failureThreshold: 8
+                  httpGet:
+                    path: /healthz/ready
+                    port: 15021
+                    scheme: HTTP
+                  periodSeconds: 15
+                  timeoutSeconds: 3
+                name: istio-proxy
                 resources:
                   requests:
                     cpu: 200m
@@ -1147,7 +1222,7 @@ full:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: https-infrastructure
       namespace: ingress-gateway
   15: |
@@ -1158,6 +1233,17 @@ full:
           replicas: 2
           template:
             spec:
+              automountServiceAccountToken: false
+              containers:
+              - livenessProbe:
+                  failureThreshold: 8
+                  httpGet:
+                    path: /healthz/ready
+                    port: 15021
+                    scheme: HTTP
+                  periodSeconds: 15
+                  timeoutSeconds: 3
+                name: istio-proxy
               securityContext:
                 seccompProfile:
                   type: RuntimeDefault
@@ -1179,7 +1265,7 @@ full:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: tcp-infrastructure
       namespace: ingress-gateway
   16: |
@@ -1190,6 +1276,17 @@ full:
           replicas: 2
           template:
             spec:
+              automountServiceAccountToken: false
+              containers:
+              - livenessProbe:
+                  failureThreshold: 8
+                  httpGet:
+                    path: /healthz/ready
+                    port: 15021
+                    scheme: HTTP
+                  periodSeconds: 15
+                  timeoutSeconds: 3
+                name: istio-proxy
               securityContext:
                 seccompProfile:
                   type: RuntimeDefault
@@ -1211,7 +1308,7 @@ full:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: tls-passthrough-infrastructure
       namespace: ingress-gateway
   17: |
@@ -1224,7 +1321,7 @@ full:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: redirect-http-to-https-https
       namespace: ingress-gateway
     spec:
@@ -1249,7 +1346,7 @@ full:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: tls-https
       namespace: ingress-gateway
     spec:
@@ -1306,7 +1403,7 @@ full:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: mtls-strict
       namespace: istio-system
     spec:
@@ -1322,7 +1419,7 @@ full:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: access-logs-https
       namespace: ingress-gateway
     spec:
@@ -1343,7 +1440,7 @@ full:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: access-logs-tcp
       namespace: ingress-gateway
     spec:
@@ -1364,7 +1461,7 @@ full:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: access-logs-tls-passthrough
       namespace: ingress-gateway
     spec:
@@ -1385,7 +1482,7 @@ full:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: access-logs-default
       namespace: egress-gateway
     spec:
@@ -1406,7 +1503,7 @@ full:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: access-logs-partner
       namespace: egress-gateway
     spec:
@@ -1428,7 +1525,7 @@ minimal:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: deny-egress-via-default
       namespace: egress-gateway
     spec:
@@ -1447,7 +1544,7 @@ minimal:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
         istio.io/waypoint-for: service
       name: default
       namespace: egress-gateway
@@ -1476,6 +1573,17 @@ minimal:
           replicas: 2
           template:
             spec:
+              automountServiceAccountToken: false
+              containers:
+              - livenessProbe:
+                  failureThreshold: 8
+                  httpGet:
+                    path: /healthz/ready
+                    port: 15021
+                    scheme: HTTP
+                  periodSeconds: 15
+                  timeoutSeconds: 3
+                name: istio-proxy
               securityContext:
                 seccompProfile:
                   type: RuntimeDefault
@@ -1497,7 +1605,7 @@ minimal:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: default-infrastructure
       namespace: egress-gateway
   4: |
@@ -1511,7 +1619,7 @@ minimal:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: https
       namespace: ingress-gateway
     spec:
@@ -1556,6 +1664,17 @@ minimal:
           replicas: 2
           template:
             spec:
+              automountServiceAccountToken: false
+              containers:
+              - livenessProbe:
+                  failureThreshold: 8
+                  httpGet:
+                    path: /healthz/ready
+                    port: 15021
+                    scheme: HTTP
+                  periodSeconds: 15
+                  timeoutSeconds: 3
+                name: istio-proxy
               securityContext:
                 seccompProfile:
                   type: RuntimeDefault
@@ -1577,7 +1696,7 @@ minimal:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: https-infrastructure
       namespace: ingress-gateway
   6: |
@@ -1590,7 +1709,7 @@ minimal:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: redirect-http-to-https-https
       namespace: ingress-gateway
     spec:
@@ -1615,7 +1734,7 @@ minimal:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: tls-https
       namespace: ingress-gateway
     spec:
@@ -1649,7 +1768,7 @@ minimal:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: mtls-strict
       namespace: istio-system
     spec:
@@ -1665,7 +1784,7 @@ minimal:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: access-logs-https
       namespace: ingress-gateway
     spec:
@@ -1686,7 +1805,7 @@ minimal:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: access-logs-default
       namespace: egress-gateway
     spec:
@@ -1708,7 +1827,7 @@ permissive:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: deny-egress-via-default
       namespace: egress-gateway
     spec:
@@ -1727,7 +1846,7 @@ permissive:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
         istio.io/waypoint-for: service
       name: default
       namespace: egress-gateway
@@ -1756,6 +1875,17 @@ permissive:
           replicas: 2
           template:
             spec:
+              automountServiceAccountToken: false
+              containers:
+              - livenessProbe:
+                  failureThreshold: 8
+                  httpGet:
+                    path: /healthz/ready
+                    port: 15021
+                    scheme: HTTP
+                  periodSeconds: 15
+                  timeoutSeconds: 3
+                name: istio-proxy
               securityContext:
                 seccompProfile:
                   type: RuntimeDefault
@@ -1777,7 +1907,7 @@ permissive:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: default-infrastructure
       namespace: egress-gateway
   4: |
@@ -1791,7 +1921,7 @@ permissive:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: https
       namespace: ingress-gateway
     spec:
@@ -1836,6 +1966,17 @@ permissive:
           replicas: 2
           template:
             spec:
+              automountServiceAccountToken: false
+              containers:
+              - livenessProbe:
+                  failureThreshold: 8
+                  httpGet:
+                    path: /healthz/ready
+                    port: 15021
+                    scheme: HTTP
+                  periodSeconds: 15
+                  timeoutSeconds: 3
+                name: istio-proxy
               securityContext:
                 seccompProfile:
                   type: RuntimeDefault
@@ -1857,7 +1998,7 @@ permissive:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: https-infrastructure
       namespace: ingress-gateway
   6: |
@@ -1870,7 +2011,7 @@ permissive:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: redirect-http-to-https-https
       namespace: ingress-gateway
     spec:
@@ -1895,7 +2036,7 @@ permissive:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: tls-https
       namespace: ingress-gateway
     spec:
@@ -1929,7 +2070,7 @@ permissive:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: mtls-permissive
       namespace: istio-system
     spec:
@@ -1945,7 +2086,7 @@ permissive:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: access-logs-https
       namespace: ingress-gateway
     spec:
@@ -1966,7 +2107,7 @@ permissive:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: boundary
-        helm.sh/chart: boundary-0.1.0
+        helm.sh/chart: boundary-0.1.1
       name: access-logs-default
       namespace: egress-gateway
     spec:

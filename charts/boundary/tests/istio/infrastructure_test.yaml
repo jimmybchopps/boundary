@@ -2,7 +2,7 @@ suite: infrastructure ConfigMap (ingress.gateways.<gateway>.infrastructure)
 templates:
   - templates/istio/ingress-infrastructure.yaml
 tests:
-  - it: the defaults
+  - it: the defaults (seccomp, no API token, and the istio-proxy liveness probe)
     asserts:
       - hasDocuments: { count: 1 }
       - isKind: { of: ConfigMap }
@@ -16,6 +16,17 @@ tests:
               replicas: 2
               template:
                 spec:
+                  automountServiceAccountToken: false
+                  containers:
+                  - livenessProbe:
+                      failureThreshold: 8
+                      httpGet:
+                        path: /healthz/ready
+                        port: 15021
+                        scheme: HTTP
+                      periodSeconds: 15
+                      timeoutSeconds: 3
+                    name: istio-proxy
                   securityContext:
                     seccompProfile:
                       type: RuntimeDefault
@@ -46,7 +57,7 @@ tests:
               minReplicas: 3
       - notMatchRegex: { path: data.deployment, pattern: replicas }
 
-  - it: nodeSelector, tolerations, and resources patch the pod and the istio-proxy container
+  - it: nodeSelector, tolerations, and resources patch the pod and the istio-proxy container (beside its liveness probe)
     set:
       ingress.gateways.https.infrastructure:
         replicas: 3
@@ -64,8 +75,17 @@ tests:
               replicas: 3
               template:
                 spec:
+                  automountServiceAccountToken: false
                   containers:
-                  - name: istio-proxy
+                  - livenessProbe:
+                      failureThreshold: 8
+                      httpGet:
+                        path: /healthz/ready
+                        port: 15021
+                        scheme: HTTP
+                      periodSeconds: 15
+                      timeoutSeconds: 3
+                    name: istio-proxy
                     resources:
                       limits:
                         memory: 512Mi
