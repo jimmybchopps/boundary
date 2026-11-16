@@ -22,6 +22,11 @@ metadata:
 spec:
   gatewayClassName: istio-waypoint
   infrastructure:
+    # Copied by Istio onto the generated pods: require-standard-labels needs the name, and
+    # posture's istio-egress profile selects the waypoint pods by the component.
+    labels:
+      app.kubernetes.io/name: {{ $gateway.name }}
+      app.kubernetes.io/component: egress-waypoint
     parametersRef:
       group: ""
       kind: ConfigMap

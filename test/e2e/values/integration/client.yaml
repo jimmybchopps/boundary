@@ -1,0 +1,9 @@
+# posture in client, a namespace outside the mesh standing in for clients outside the cluster:
+# egress only to the ingress gateways, on their listener ports.
+mesh: none
+egress:
+  x:
+    to:
+      any:                      # every gateway pod
+        namespace: ingress-gateway
+        ports: [443, 80]

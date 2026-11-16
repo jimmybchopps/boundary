@@ -1,0 +1,14 @@
+# posture in apps: asks for two hosts through the default egress waypoint. boundary's list
+# (values/integration/boundary.yaml) has allowed-tls only, so denied-tls reaches the waypoint
+# and is refused there.
+mesh: istio
+egress:
+  allowedHosts:
+    allowed-tls:
+      hosts: [allowed-tls.e2e.test]
+      ports: [443]
+      protocol: TLS
+    denied-tls:
+      hosts: [denied-tls.e2e.test]
+      ports: [443]
+      protocol: TLS

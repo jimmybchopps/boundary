@@ -60,3 +60,25 @@ jobs:
 
       - name: e2e (k3d + Istio ambient)
         run: make e2e MESH=${{ matrix.mesh }}
+
+  e2e-integration:
+    name: e2e-integration (mesh ${{ matrix.mesh }})
+    needs: e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        mesh: [istio]
+    env:
+      HELM_VERSION: "4.3.1"
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/cache@v6
+        with:
+          path: .bin
+          key: tools-e2e-${{ runner.os }}-${{ hashFiles('Makefile') }}
+
+      - name: integration (k3d + Calico + policy + Istio ambient + posture + boundary)
+        run: make e2e-integration MESH=${{ matrix.mesh }}

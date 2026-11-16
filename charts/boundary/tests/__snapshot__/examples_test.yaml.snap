@@ -49,6 +49,9 @@ deny-all:
     spec:
       gatewayClassName: istio-waypoint
       infrastructure:
+        labels:
+          app.kubernetes.io/component: egress-waypoint
+          app.kubernetes.io/name: default
         parametersRef:
           group: ""
           kind: ConfigMap
@@ -109,6 +112,9 @@ deny-all:
     spec:
       gatewayClassName: istio
       infrastructure:
+        labels:
+          app.kubernetes.io/component: ingress-gateway
+          app.kubernetes.io/name: https
         parametersRef:
           group: ""
           kind: ConfigMap
@@ -439,6 +445,9 @@ egress:
     spec:
       gatewayClassName: istio-waypoint
       infrastructure:
+        labels:
+          app.kubernetes.io/component: egress-waypoint
+          app.kubernetes.io/name: default
         parametersRef:
           group: ""
           kind: ConfigMap
@@ -505,6 +514,9 @@ egress:
     spec:
       gatewayClassName: istio
       infrastructure:
+        labels:
+          app.kubernetes.io/component: ingress-gateway
+          app.kubernetes.io/name: https
         parametersRef:
           group: ""
           kind: ConfigMap
@@ -847,6 +859,9 @@ full:
     spec:
       gatewayClassName: istio-waypoint
       infrastructure:
+        labels:
+          app.kubernetes.io/component: egress-waypoint
+          app.kubernetes.io/name: default
         parametersRef:
           group: ""
           kind: ConfigMap
@@ -907,6 +922,9 @@ full:
     spec:
       gatewayClassName: istio-waypoint
       infrastructure:
+        labels:
+          app.kubernetes.io/component: egress-waypoint
+          app.kubernetes.io/name: partner
         parametersRef:
           group: ""
           kind: ConfigMap
@@ -969,6 +987,9 @@ full:
     spec:
       gatewayClassName: istio
       infrastructure:
+        labels:
+          app.kubernetes.io/component: ingress-gateway
+          app.kubernetes.io/name: https
         parametersRef:
           group: ""
           kind: ConfigMap
@@ -1030,6 +1051,9 @@ full:
     spec:
       gatewayClassName: istio
       infrastructure:
+        labels:
+          app.kubernetes.io/component: ingress-gateway
+          app.kubernetes.io/name: tcp
         parametersRef:
           group: ""
           kind: ConfigMap
@@ -1061,6 +1085,9 @@ full:
     spec:
       gatewayClassName: istio
       infrastructure:
+        labels:
+          app.kubernetes.io/component: ingress-gateway
+          app.kubernetes.io/name: tls-passthrough
         parametersRef:
           group: ""
           kind: ConfigMap
@@ -1427,6 +1454,9 @@ minimal:
     spec:
       gatewayClassName: istio-waypoint
       infrastructure:
+        labels:
+          app.kubernetes.io/component: egress-waypoint
+          app.kubernetes.io/name: default
         parametersRef:
           group: ""
           kind: ConfigMap
@@ -1487,6 +1517,9 @@ minimal:
     spec:
       gatewayClassName: istio
       infrastructure:
+        labels:
+          app.kubernetes.io/component: ingress-gateway
+          app.kubernetes.io/name: https
         parametersRef:
           group: ""
           kind: ConfigMap
@@ -1701,6 +1734,9 @@ permissive:
     spec:
       gatewayClassName: istio-waypoint
       infrastructure:
+        labels:
+          app.kubernetes.io/component: egress-waypoint
+          app.kubernetes.io/name: default
         parametersRef:
           group: ""
           kind: ConfigMap
@@ -1761,6 +1797,9 @@ permissive:
     spec:
       gatewayClassName: istio
       infrastructure:
+        labels:
+          app.kubernetes.io/component: ingress-gateway
+          app.kubernetes.io/name: https
         parametersRef:
           group: ""
           kind: ConfigMap

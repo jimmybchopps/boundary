@@ -17,7 +17,9 @@ tests:
       - equal: { path: spec.gatewayClassName, value: istio }
       - equal:
           path: spec.infrastructure
-          value: { parametersRef: { group: "", kind: ConfigMap, name: https-infrastructure } }
+          value:
+            labels: { app.kubernetes.io/name: https, app.kubernetes.io/component: ingress-gateway }
+            parametersRef: { group: "", kind: ConfigMap, name: https-infrastructure }
       - notExists: { path: spec.addresses }
 
   - it: an HTTPS listener terminates TLS with its certificates and admits labeled namespaces

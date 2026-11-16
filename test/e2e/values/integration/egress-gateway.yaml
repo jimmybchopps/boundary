@@ -1,0 +1,6 @@
+# posture in egress-gateway: the istio-egress profile (HBONE in from every namespace, 443 and 80
+# out to any address, and the disallow-mesh-opt-out exception for the pods boundary labels
+# app.kubernetes.io/component: egress-waypoint). Nothing else.
+mesh: istio
+profiles:
+  istio-egress: {}

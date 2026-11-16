@@ -1,0 +1,6 @@
+# posture in ingress-gateway: the istio-ingress profile (listener ports 443 and 80 from the
+# private ranges, HBONE to meshed backends, and the disallow-mesh-opt-out exception for the pods
+# boundary labels app.kubernetes.io/component: ingress-gateway). Nothing else.
+mesh: istio
+profiles:
+  istio-ingress: {}

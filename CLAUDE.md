@@ -46,9 +46,13 @@ The build order is in `docs/PLAN.md`. Work through it phase by phase.
   this chart: namespaces opt in to ingress with a label, and workloads request egress through
   their own `posture`. The exception is the `tcp` gateway: raw TCP has no hostname, so each TCP
   service needs its own listener (port), added here when it's planned.
-- **Gateway pods comply without exceptions.** Generated gateway and waypoint pods are made to
-  pass the `policy` chart's baseline through each Gateway's infrastructure parameters, never by
-  relying on `posture` exceptions.
+- **Gateway pods comply without exceptions, with one exception.** Generated gateway and waypoint
+  pods are made to pass the `policy` chart's baseline and its default-on policies through each
+  Gateway's infrastructure parameters and `spec.infrastructure.labels`, never by relying on
+  `posture` exceptions. The one exception is `disallow-mesh-opt-out`: Istio's
+  `sidecar.istio.io/inject: "false"` (and the waypoint's `istio.io/dataplane-mode: none`) is what
+  makes the gateway the mesh's own proxy, so it stays. The exception lives in posture's
+  `istio-ingress` and `istio-egress` profiles, selected by the component label this chart sets.
 - **Same-namespace certificates.** Listeners reference Secrets in the gateway's own namespace.
   No cross-namespace references and no ReferenceGrants (a possible later option).
 - **Every generated object says why it exists**: annotation `boundary.posture.dev/rule` with the
@@ -238,6 +242,8 @@ Istio offers no Gateway API field for TLS versions or ciphers, so they're applie
 | Egress namespace | `egress-gateway` | boundary, posture's `istio-egress` profile, `egress-gateway` destination, and `allowedHosts` |
 | Default egress gateway name | `default` | boundary, posture's `allowedHosts` routing |
 | Route attachment label | `ingress.boundary.posture.dev/<gateway>: "true"` | boundary, namespace creators |
+| Gateway pod component label | `app.kubernetes.io/component: ingress-gateway` / `egress-waypoint` (plus `app.kubernetes.io/name: <gateway>`) | boundary (`spec.infrastructure.labels`), posture's `istio-ingress` / `istio-egress` exception |
+| Route-hostname rule skips the ingress namespace | `restrict-route-hostnames.namespaces: [ingress-gateway]` | policy's values at the site (the redirect route has no hostnames) |
 | `allowedHosts` shape | see above | boundary, posture |
 | Gateway ports for posture | `https` 443/80, `tls-passthrough` 443 | boundary, posture's `istio-ingress` profile settings |
 
@@ -272,9 +278,12 @@ charts/boundary/
   tests/                helm-unittest suites, one subfolder per output (tests/istio/)
 examples/               values files that double as fixtures (lint, kubeconform, snapshots, e2e)
 test/model-probe/       test-only chart rendering the model as YAML for unit tests
-test/e2e/               k3d harness: run.sh, lib.sh, scenarios/<name>.sh
+test/e2e/               k3d harness: run.sh, lib.sh, scenarios/<name>.sh; integration.sh and
+                        values/integration/ (the whole stack under policy and posture)
+test/release/           release scripts (tag check, dist build, notes) and their tag-cases
 Makefile                pinned tool versions and every test target
 README.md               install, usage, infrastructure keys, gateway pod compliance
+CHANGELOG.md            one section per release; a tag v<version> must match it and Chart.yaml
 docs/PLAN.md
 ```
 
@@ -288,6 +297,9 @@ The harness is the one used by `posture`: pinned tools in `.bin/`, nothing insta
     make test-all-helm    make test under Helm 3.14, the latest 3.x, and 4
     make unittest-update  regenerate the example snapshots (review the diff)
     make e2e MESH=istio [E2E_ARGS=<scenario>] [E2E_KEEP=1] [E2E_REUSE=1]   needs Docker
+    make e2e-integration MESH=istio [E2E_KEEP=1]   the whole stack, one script; needs Docker
+    make release-check TAG=v<version>   build a release's assets into dist/, as the release
+                          workflow does (make test runs check-release, the tag-check cases)
 
 Unit tests: one `failedTemplate` case per render failure, matching `boundary: <path>: ...`;
 normalization is asserted on the model through `test/model-probe`. e2e scenarios define
@@ -299,6 +311,14 @@ The e2e cluster is k3d with the Gateway API CRDs (v1.6, standard), then Istio am
 (`platform=k3d`), then `posture` in the two gateway namespaces, then this chart. Every behavior
 needs an e2e case that shows the allowed path works and the refused path is refused.
 
+The integration run (`test/e2e/integration.sh`, values in `test/e2e/values/integration/`) is a
+separate cluster with Calico (so posture's NetworkPolicies are enforced), the pinned `policy`
+chart with its defaults enforced, Istio's images by digest, and `posture` in every namespace, in
+the README's install order. Its checks: gateway pods admitted with only the profile exception,
+ingress through `https`, the egress limit, `restrict-route-hostnames`, and a clean uninstall.
+The e2e workloads meet the policy defaults (images by digest, read-only root filesystem,
+requests and a memory limit), so both runs use them.
+
 ## Status
 
 | Phase | Area | Status |
@@ -306,7 +326,7 @@ needs an e2e case that shows the allowed path works and the refused path is refu
 | 1 | Skeleton, model, mesh-wide settings | done |
 | 2 | Istio ingress gateways and TLS settings | done |
 | 3 | Istio egress gateways | done |
-| 4 | Integration with `posture` and `policy` (Istio) | not started |
+| 4 | Integration with `posture` and `policy` (Istio) | done |
 | 5 | Envoy Gateway ingress (Linkerd and no mesh) and Linkerd egress | not started |
 | 6 | Linkerd and no-mesh integration | not started |
 | 7 | Cilium | not started |

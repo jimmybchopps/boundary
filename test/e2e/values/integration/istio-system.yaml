@@ -1,0 +1,7 @@
+# posture in istio-system: the istio-system profile (istiod's and ztunnel's exceptions and
+# traffic, meshMember: false). Installed after Istio's CRDs and the policy chart, before istiod
+# and ztunnel, so they're admitted. apiServerCidrs is set at run time to the k3d Docker network,
+# where the API server's webhook calls come from.
+mesh: istio
+profiles:
+  istio-system: {}

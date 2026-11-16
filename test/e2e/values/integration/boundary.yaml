@@ -1,0 +1,23 @@
+# boundary in the integration run, passed after examples/minimal.yaml: the https gateway (its
+# Service ClusterIP, since the client is in the cluster) for every hostname under e2e.test, with
+# the certificate apps-tls (*.shop.e2e.test, made by integration.sh), and the default egress
+# waypoint allowing one host. apps asks posture for allowed-tls and denied-tls; only allowed-tls
+# is on this list.
+ingress:
+  gateways:
+    https:
+      service: { type: ClusterIP }
+      listeners:
+        https:
+          hostname: "*.e2e.test"
+          certificates: [apps-tls]
+        http:
+          hostname: "*.e2e.test"
+egress:
+  gateways:
+    default:
+      allowedHosts:
+        allowed-tls:
+          hosts: [allowed-tls.e2e.test]
+          ports: [443]
+          protocol: TLS
