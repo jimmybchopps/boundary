@@ -6,8 +6,9 @@ apply to every namespace.
 
 It is **mesh-aware, not mesh-installing**: it creates resources in the mesh that's already
 running and never installs the mesh itself. Today it supports **Istio in ambient mode**: the
-mesh-wide settings, the ingress gateways, and the egress gateways. Envoy Gateway with Linkerd or
-no mesh, and Cilium follow (see [docs/PLAN.md](docs/PLAN.md)).
+mesh-wide settings, the ingress gateways, and the egress gateways, tested together with the
+`policy` and `posture` charts. Envoy Gateway with Linkerd or no mesh, and Cilium follow (see
+[docs/PLAN.md](docs/PLAN.md)). Releases are listed in [CHANGELOG.md](CHANGELOG.md).
 
 Companion charts: `policy` (the cluster's admission policies) and `posture` (each namespace's
 network policies, authorization, and policy exceptions). boundary never references them; they
@@ -45,9 +46,17 @@ This chart installs none of these:
 
 ## Install
 
+From a release, with the package checked against the release's `SHA256SUMS`:
+
 ```sh
-helm install boundary ./charts/boundary -n istio-system -f values.yaml
+v=0.1.0
+base=https://github.com/jimmybchopps/boundary/releases/download/v$v
+curl -fsSLO "$base/boundary-$v.tgz" && curl -fsSLO "$base/SHA256SUMS"
+sha256sum -c SHA256SUMS
+helm install boundary "boundary-$v.tgz" -n istio-system -f values.yaml
 ```
+
+Or from a checkout: `helm install boundary ./charts/boundary -n istio-system -f values.yaml`.
 
 Objects go into the namespaces they belong in (`istio.rootNamespace`, `ingress.namespace`,
 `egress.namespace`), whatever the release namespace. Every value is checked by the chart's JSON schema and its model.

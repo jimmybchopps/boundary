@@ -83,15 +83,16 @@ UNITTEST_VERSION := $(if $(filter 3.14.%,$(HELM_VERSION)),$(HELM_UNITTEST_LEGACY
 # subfolders (tests/istio/), so name both levels.
 UNITTEST_FILES := -f 'tests/*_test.yaml' -f 'tests/*/*_test.yaml'
 
-.PHONY: help tools tools-e2e e2e-deps lint unittest unittest-update validate test test-all-helm e2e e2e-integration clean
+.PHONY: help tools tools-e2e e2e-deps lint unittest unittest-update validate check-release release-check test test-all-helm e2e e2e-integration clean
 
 help:
 	@echo "make tools          install helm $(HELM_VERSION), helm-unittest, kubeconform into .bin/"
-	@echo "make test           lint, unittest, validate"
+	@echo "make test           lint, unittest, validate, check-release"
 	@echo "make test-all-helm  make test under Helm $(HELM_VERSIONS)"
 	@echo "make e2e            k3d end-to-end tests (MESH=istio, E2E_ARGS=<scenario>, E2E_KEEP=1)"
 	@echo "make e2e-integration  the full stack (policy, Istio, posture, boundary) on one cluster"
 	@echo "make unittest-update  regenerate example snapshots (review the diff)"
+	@echo "make release-check TAG=v<version>  build a release's assets into dist/, as the release workflow does"
 	@echo "HELM_VERSION=x.y.z selects the Helm version for any target."
 
 tools: $(HELM) $(UNITTEST_PLUGIN) $(KUBECONFORM)
@@ -182,7 +183,19 @@ validate: $(HELM) $(KUBECONFORM)
 	        -schema-location default -schema-location '$(CRDS_CATALOG)'; \
 	done
 
-test: lint unittest validate
+# The release scripts' own cases (test/release/tag-cases/): a tag must match Chart.yaml and a
+# CHANGELOG.md section that is no longer marked (unreleased).
+check-release:
+	@test/release/run-cases.sh
+
+# Builds a release's assets into dist/ exactly as .github/workflows/release.yml does
+# (test/release/build-dist.sh), so a release can be rehearsed before tagging:
+#   make release-check TAG=v0.1.0
+release-check: $(HELM)
+	@test -n "$(TAG)" || { echo "usage: make release-check TAG=v<version>"; exit 1; }
+	@HELM=$(HELM) test/release/build-dist.sh $(TAG) dist
+
+test: lint unittest validate check-release
 
 test-all-helm:
 	@set -e; for v in $(HELM_VERSIONS); do \

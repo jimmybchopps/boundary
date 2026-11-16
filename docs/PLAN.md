@@ -98,22 +98,22 @@ namespace (profiles `istio-system`, `istio-ingress`, `istio-egress` where they a
 chart. `test/e2e/integration.sh` (`make e2e-integration`), on a Calico cluster so posture's
 NetworkPolicies are enforced, with policy 0.2.1 and posture 0.2.0.
 
-- [ ] Gateway and waypoint pods are admitted under the `policy` chart's defaults, enforced, with
+- [x] Gateway and waypoint pods are admitted under the `policy` chart's defaults, enforced, with
       only the documented profile exception in `posture-exceptions`: `disallow-mesh-opt-out`,
       from posture's `istio-ingress` and `istio-egress` profiles, selected by the
       `app.kubernetes.io/component` label boundary sets through `spec.infrastructure.labels`
       (with `app.kubernetes.io/name`, for `require-standard-labels`). Istio's images are pinned
       by digest at install (README, "Running under the policy chart").
-- [ ] Ingress: an application namespace with its `posture` (the `ingress-gateway` source), the
+- [x] Ingress: an application namespace with its `posture` (the `ingress-gateway` source), the
       route label, and an HTTPRoute is reachable through `https`.
-- [ ] Egress: an application whose `posture` lists a host in `egress.allowedHosts`:
+- [x] Egress: an application whose `posture` lists a host in `egress.allowedHosts`:
       - reaches it through the default gateway when this chart's list includes it;
       - is refused at the waypoint when it doesn't;
       - another namespace that didn't list the host can't reach it.
-- [ ] With the optional `policy` route-hostname rule enabled (and the ingress namespace in its
+- [x] With the optional `policy` route-hostname rule enabled (and the ingress namespace in its
       `namespaces`, for the redirect route), a route claiming another namespace's hostname, or
       no hostname, is denied at admission.
-- [ ] A clean install and uninstall in the documented order leaves no stuck resources.
+- [x] A clean install and uninstall in the documented order leaves no stuck resources.
 
 **Done when** every case above passes on one cluster from a single script.
 

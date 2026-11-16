@@ -278,9 +278,12 @@ charts/boundary/
   tests/                helm-unittest suites, one subfolder per output (tests/istio/)
 examples/               values files that double as fixtures (lint, kubeconform, snapshots, e2e)
 test/model-probe/       test-only chart rendering the model as YAML for unit tests
-test/e2e/               k3d harness: run.sh, lib.sh, scenarios/<name>.sh
+test/e2e/               k3d harness: run.sh, lib.sh, scenarios/<name>.sh; integration.sh and
+                        values/integration/ (the whole stack under policy and posture)
+test/release/           release scripts (tag check, dist build, notes) and their tag-cases
 Makefile                pinned tool versions and every test target
 README.md               install, usage, infrastructure keys, gateway pod compliance
+CHANGELOG.md            one section per release; a tag v<version> must match it and Chart.yaml
 docs/PLAN.md
 ```
 
@@ -295,6 +298,8 @@ The harness is the one used by `posture`: pinned tools in `.bin/`, nothing insta
     make unittest-update  regenerate the example snapshots (review the diff)
     make e2e MESH=istio [E2E_ARGS=<scenario>] [E2E_KEEP=1] [E2E_REUSE=1]   needs Docker
     make e2e-integration MESH=istio [E2E_KEEP=1]   the whole stack, one script; needs Docker
+    make release-check TAG=v<version>   build a release's assets into dist/, as the release
+                          workflow does (make test runs check-release, the tag-check cases)
 
 Unit tests: one `failedTemplate` case per render failure, matching `boundary: <path>: ...`;
 normalization is asserted on the model through `test/model-probe`. e2e scenarios define
@@ -321,7 +326,7 @@ requests and a memory limit), so both runs use them.
 | 1 | Skeleton, model, mesh-wide settings | done |
 | 2 | Istio ingress gateways and TLS settings | done |
 | 3 | Istio egress gateways | done |
-| 4 | Integration with `posture` and `policy` (Istio) | in progress: static suite passes; integration not yet run |
+| 4 | Integration with `posture` and `policy` (Istio) | done |
 | 5 | Envoy Gateway ingress (Linkerd and no mesh) and Linkerd egress | not started |
 | 6 | Linkerd and no-mesh integration | not started |
 | 7 | Cilium | not started |
