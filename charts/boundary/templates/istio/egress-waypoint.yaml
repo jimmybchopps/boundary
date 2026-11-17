@@ -4,6 +4,9 @@ services), in the egress namespace, with its infrastructure ConfigMap (see _infr
 exitNodes is part of its nodeSelector). The HBONE listener admits every namespace: posture's
 ServiceEntries in any namespace route here (istio.io/use-waypoint), and the waypoint's
 AuthorizationPolicies (egress-authorization.yaml) are the limit on where traffic goes.
+Istio would name the waypoint's ServiceAccount after the Gateway, and the default gateway is
+called default, so gateway.istio.io/service-account names it <gateway>-waypoint instead
+(disallow-default-service-account). Istio still creates and owns the ServiceAccount.
 */ -}}
 {{- $model := include "boundary.model" . | fromJson -}}
 {{- if eq $model.mesh "istio" }}
@@ -19,6 +22,7 @@ metadata:
     istio.io/waypoint-for: service
   annotations:
     {{- include "boundary.annotations" $gateway.path | nindent 4 }}
+    gateway.istio.io/service-account: {{ $gateway.serviceAccountName }}
 spec:
   gatewayClassName: istio-waypoint
   infrastructure:

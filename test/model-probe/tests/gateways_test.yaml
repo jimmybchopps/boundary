@@ -147,6 +147,7 @@ tests:
       - equal: { path: infrastructure.nodeSelector, value: {} }
       - equal: { path: infrastructureName, value: default-infrastructure }
       - equal: { path: accessLogsName, value: access-logs-default }
+      - equal: { path: serviceAccountName, value: default-waypoint }
       - equal: { path: denyName, value: deny-egress-via-default }
 
   - it: exitNodes joins the egress gateway's infrastructure nodeSelector

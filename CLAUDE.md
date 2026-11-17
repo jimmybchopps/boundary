@@ -203,7 +203,10 @@ Istio offers no Gateway API field for TLS versions or ciphers, so they're applie
   `istio.io/waypoint-for: service`) per enabled `egress.gateways` entry, in the egress namespace,
   with one HBONE listener (15008) admitting every namespace (`allowedRoutes.namespaces.from:
   All`): posture's ServiceEntries anywhere route to it, and its policies are the limit. Istio
-  names the generated Deployment and Service after the Gateway (no `-istio` suffix).
+  names the generated Deployment and Service after the Gateway (no `-istio` suffix). It would
+  name the ServiceAccount after it too, and the default gateway is `default`, which
+  `disallow-default-service-account` refuses, so the Gateway's `gateway.istio.io/service-account`
+  annotation names it `<gateway>-waypoint` (Istio still creates it).
 - **The waypoint enforces a limit by destination, never by namespace.** One ALLOW
   `AuthorizationPolicy` per enabled `allowedHosts` entry, targeting the waypoint (`targetRefs`):
   `HTTP` by `to.operation.hosts` and ports, `TLS` by the `connection.sni` condition and ports,
@@ -259,6 +262,7 @@ Renaming any of these is supported, but it must be changed in every chart that u
 - HTTPS redirect: `redirect-http-to-https-<gateway>`.
 - TLS settings: `tls-<gateway>` (EnvoyFilter).
 - Infrastructure ConfigMaps: `<gateway>-infrastructure`.
+- Waypoint ServiceAccounts (created by Istio, named by this chart): `<gateway>-waypoint`.
 - Mesh-wide: `mtls-strict` / `mtls-permissive`, `deny-all`, `access-logs-<gateway>`.
 - Names over 253 characters fail the render with the offending entry.
 

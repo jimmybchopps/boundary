@@ -268,6 +268,10 @@ patch to what it generates for the Gateway. Istio 1.32 reads these keys:
 | `podDisruptionBudget` | a PDB, created only when the key is present | always: `minAvailable` |
 | `serviceAccount` | the ServiceAccount | not used |
 
+Istio names an ingress gateway's ServiceAccount `<gateway>-istio`. A waypoint's would take the
+Gateway's own name (`default` for the default gateway), so the waypoint Gateway's
+`gateway.istio.io/service-account` annotation names it `<gateway>-waypoint`; Istio still creates it.
+
 For ingress gateways, the Service type is passed to Istio with the Gateway annotation
 `networking.istio.io/service-type`. `service.loadBalancerIP` becomes the Gateway's
 `spec.addresses`. Waypoints take `exitNodes` as well (see above).
@@ -312,6 +316,7 @@ them on the pods directly:
 | `require-standard-labels` | Istio sets no `app.kubernetes.io/name` | **fixed**: the Gateway's `spec.infrastructure.labels` sets `app.kubernetes.io/name: <gateway>` and `app.kubernetes.io/component: ingress-gateway` or `egress-waypoint` |
 | `require-image-digest` | the proxy image as Istio is configured | site-specific: install Istio with `global.proxy.image` pinned by digest |
 | `restrict-loadbalancer-services` | the ingress gateway's default `LoadBalancer` Service | site-specific: list the ingress namespace in the policy's `namespaces` (waypoints use ClusterIP) |
+| `disallow-default-service-account` | Istio names the ServiceAccount `<gateway>-istio` for a gateway, but after the Gateway itself for a waypoint, so the default waypoint's is `default` | **fixed**: the waypoint Gateway's `gateway.istio.io/service-account` annotation names it `<gateway>-waypoint` |
 | `require-probes` (audit by default) | Istio sets startup and readiness probes, but no liveness probe | **fixed**: the ConfigMap gives `istio-proxy` a liveness probe on Istio's own `/healthz/ready` (15021), with a longer allowance than readiness (8 failures, 15 seconds apart) |
 | `disallow-automount-service-account-token` (audit by default) | **unset by Istio** | **fixed**: the ConfigMap sets `automountServiceAccountToken: false`; the proxy never calls the Kubernetes API (it authenticates to istiod with the projected `istio-token`, and istiod sends it its certificates) |
 

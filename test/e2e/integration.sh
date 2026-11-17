@@ -187,9 +187,12 @@ only_profile_exception() {
 }
 
 admission_checks() {
-  local entry ns gw component
-  for entry in "$INGRESS_NAMESPACE https ingress-gateway" "$EGRESS_NAMESPACE default egress-waypoint"; do
-    read -r ns gw component <<<"$entry"
+  local entry ns gw component sa
+  # sa: the ServiceAccount Istio generates (ingress <gateway>-istio; waypoints <gateway>-waypoint
+  # through the Gateway's gateway.istio.io/service-account, since the default one is "default").
+  for entry in "$INGRESS_NAMESPACE https ingress-gateway https-istio" \
+               "$EGRESS_NAMESPACE default egress-waypoint default-waypoint"; do
+    read -r ns gw component sa <<<"$entry"
     check "admission: ${ns}/${gw}'s pods are admitted and its Deployment is available" \
       gateway_available "$ns" "$gw"
     check "admission: no pod in ${ns} was refused" \
@@ -203,6 +206,8 @@ admission_checks() {
     # pods directly: both come from the infrastructure ConfigMap.
     check "admission: ${ns}/${gw}'s pods set automountServiceAccountToken: false (disallow-automount-service-account-token)" \
       every_pod_is "$ns" "$gw" false '{.spec.automountServiceAccountToken}'
+    check "admission: ${ns}/${gw}'s pods run as ServiceAccount ${sa}, not default (disallow-default-service-account)" \
+      every_pod_is "$ns" "$gw" "$sa" '{.spec.serviceAccountName}'
     check "admission: ${ns}/${gw}'s istio-proxy has a liveness probe on /healthz/ready (require-probes)" \
       every_pod_is "$ns" "$gw" /healthz/ready '{.spec.containers[?(@.name=="istio-proxy")].livenessProbe.httpGet.path}'
   done

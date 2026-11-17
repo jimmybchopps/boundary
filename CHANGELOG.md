@@ -15,6 +15,12 @@ without a `posture` exception.
 - **A liveness probe on `istio-proxy`** (`require-probes`): `/healthz/ready` on 15021, the
   endpoint of Istio's own startup and readiness probes, every 15 seconds, restarting after 8
   failures.
+- **Waypoints get their own ServiceAccount**, `<gateway>-waypoint`, through the Gateway's
+  `gateway.istio.io/service-account` annotation (`disallow-default-service-account`). Istio
+  names a waypoint's ServiceAccount after the Gateway, so the `default` waypoint ran as the
+  namespace's `default` ServiceAccount and its pods were refused. On upgrade the waypoint's
+  identity changes from `sa/default` to `sa/default-waypoint`; nothing in this chart or
+  `posture` refers to it.
 - The integration run enforces `disallow-default-service-account`,
   `disallow-rbac-escalation-verbs`, `disallow-secrets-in-env`, and
   `disallow-shared-process-namespace` as well, and checks the gateway pods for the two fixes

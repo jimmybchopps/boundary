@@ -38,6 +38,7 @@ deny-all:
     metadata:
       annotations:
         boundary.posture.dev/rule: egress.gateways.default
+        gateway.istio.io/service-account: default-waypoint
       labels:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
@@ -456,6 +457,7 @@ egress:
     metadata:
       annotations:
         boundary.posture.dev/rule: egress.gateways.default
+        gateway.istio.io/service-account: default-waypoint
       labels:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
@@ -892,6 +894,7 @@ full:
     metadata:
       annotations:
         boundary.posture.dev/rule: egress.gateways.default
+        gateway.istio.io/service-account: default-waypoint
       labels:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
@@ -966,6 +969,7 @@ full:
     metadata:
       annotations:
         boundary.posture.dev/rule: egress.gateways.partner
+        gateway.istio.io/service-account: partner-waypoint
       labels:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
@@ -1540,6 +1544,7 @@ minimal:
     metadata:
       annotations:
         boundary.posture.dev/rule: egress.gateways.default
+        gateway.istio.io/service-account: default-waypoint
       labels:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm
@@ -1842,6 +1847,7 @@ permissive:
     metadata:
       annotations:
         boundary.posture.dev/rule: egress.gateways.default
+        gateway.istio.io/service-account: default-waypoint
       labels:
         app.kubernetes.io/instance: boundary
         app.kubernetes.io/managed-by: Helm

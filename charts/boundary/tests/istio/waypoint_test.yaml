@@ -9,7 +9,11 @@ tests:
       - equal: { path: metadata.name, value: default }
       - equal: { path: metadata.namespace, value: egress-gateway }
       - equal: { path: "metadata.labels[\"istio.io/waypoint-for\"]", value: service }
-      - equal: { path: metadata.annotations, value: { boundary.posture.dev/rule: egress.gateways.default } }
+      - equal:
+          path: metadata.annotations
+          value:
+            boundary.posture.dev/rule: egress.gateways.default
+            gateway.istio.io/service-account: default-waypoint
       - equal: { path: spec.gatewayClassName, value: istio-waypoint }
       - equal:
           path: spec.infrastructure
@@ -37,6 +41,8 @@ tests:
       - equal: { path: spec.infrastructure.parametersRef.name, value: second-infrastructure }
         documentSelector: { path: metadata.name, value: second }
       - equal: { path: "spec.infrastructure.labels[\"app.kubernetes.io/name\"]", value: second }
+        documentSelector: { path: metadata.name, value: second }
+      - equal: { path: "metadata.annotations[\"gateway.istio.io/service-account\"]", value: second-waypoint }
         documentSelector: { path: metadata.name, value: second }
 
   - it: no enabled gateway renders nothing
