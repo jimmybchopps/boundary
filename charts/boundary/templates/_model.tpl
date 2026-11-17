@@ -39,6 +39,7 @@ Shape:
       - name, path, default, exitNodes
         infrastructure: { ... }           # as for ingress; nodeSelector includes exitNodes
         infrastructureName, accessLogsName  # object names
+        serviceAccountName                # <gateway>-waypoint (Istio creates it; never default)
         denyName                          # deny-egress-via-<gateway>: the allow-nothing policy
         allowedHosts:                     # enabled only, sorted by name
           - name, path, policyName        # allow-egress-via-<gateway>-to-<entry>
@@ -157,6 +158,7 @@ formatting them with printf.
           "infrastructure" $infrastructure
           "infrastructureName" (include "boundary.name" (dict "name" (printf "%s-infrastructure" $name) "path" $gatewayPath))
           "accessLogsName" (include "boundary.name" (dict "name" (printf "access-logs-%s" $name) "path" $gatewayPath))
+          "serviceAccountName" (include "boundary.name" (dict "name" (printf "%s-waypoint" $name) "path" $gatewayPath))
           "denyName" (include "boundary.name" (dict "name" (printf "deny-egress-via-%s" $name) "path" $gatewayPath))
           "allowedHosts" $hosts) -}}
   {{- end -}}

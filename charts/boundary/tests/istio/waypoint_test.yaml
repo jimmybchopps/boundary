@@ -9,7 +9,11 @@ tests:
       - equal: { path: metadata.name, value: default }
       - equal: { path: metadata.namespace, value: egress-gateway }
       - equal: { path: "metadata.labels[\"istio.io/waypoint-for\"]", value: service }
-      - equal: { path: metadata.annotations, value: { boundary.posture.dev/rule: egress.gateways.default } }
+      - equal:
+          path: metadata.annotations
+          value:
+            boundary.posture.dev/rule: egress.gateways.default
+            gateway.istio.io/service-account: default-waypoint
       - equal: { path: spec.gatewayClassName, value: istio-waypoint }
       - equal:
           path: spec.infrastructure
@@ -38,6 +42,8 @@ tests:
         documentSelector: { path: metadata.name, value: second }
       - equal: { path: "spec.infrastructure.labels[\"app.kubernetes.io/name\"]", value: second }
         documentSelector: { path: metadata.name, value: second }
+      - equal: { path: "metadata.annotations[\"gateway.istio.io/service-account\"]", value: second-waypoint }
+        documentSelector: { path: metadata.name, value: second }
 
   - it: no enabled gateway renders nothing
     set:
@@ -45,7 +51,7 @@ tests:
     asserts:
       - hasDocuments: { count: 0 }
 
-  - it: the ConfigMap has the infrastructure defaults and no service patch
+  - it: the ConfigMap has the infrastructure defaults (no API token, the liveness probe) and no service patch
     documentSelector: { path: kind, value: ConfigMap }
     asserts:
       - equal: { path: metadata.name, value: default-infrastructure }
@@ -57,6 +63,17 @@ tests:
               replicas: 2
               template:
                 spec:
+                  automountServiceAccountToken: false
+                  containers:
+                  - livenessProbe:
+                      failureThreshold: 8
+                      httpGet:
+                        path: /healthz/ready
+                        port: 15021
+                        scheme: HTTP
+                      periodSeconds: 15
+                      timeoutSeconds: 3
+                    name: istio-proxy
                   securityContext:
                     seccompProfile:
                       type: RuntimeDefault

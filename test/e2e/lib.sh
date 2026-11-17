@@ -315,6 +315,7 @@ spec:
       labels: { app.kubernetes.io/name: ${label}, e2e.boundary.posture.dev/deployment: ${name} }
     spec:
       serviceAccountName: ${sa}
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 1
       securityContext:
         runAsNonRoot: true
@@ -328,6 +329,9 @@ spec:
           readinessProbe:
             tcpSocket: { port: $1 }
             periodSeconds: 2
+          livenessProbe:
+            tcpSocket: { port: $1 }
+            periodSeconds: 10
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -338,6 +342,12 @@ spec:
         - name: client
           image: ${CURL_IMAGE}
           command: [sleep, infinity]
+          readinessProbe:
+            exec: { command: ["true"] }
+            periodSeconds: 10
+          livenessProbe:
+            exec: { command: ["true"] }
+            periodSeconds: 10
           volumeMounts:
             - { name: tmp, mountPath: /tmp }
           securityContext:

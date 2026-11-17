@@ -4,6 +4,29 @@ Newest first, one `## X.Y.Z` section per release. A version's section stays mark
 `(unreleased)` until the release commit; the release workflow refuses a tag whose section
 still is, or whose version doesn't match `charts/boundary/Chart.yaml`.
 
+## 0.1.1
+
+The gateway and waypoint pods now pass the `policy` chart's two remaining default-on policies
+without a `posture` exception.
+
+- **`automountServiceAccountToken: false`** on every ingress gateway and egress waypoint pod,
+  through the infrastructure ConfigMap (`disallow-automount-service-account-token`). The proxy
+  doesn't use the API token: it authenticates to istiod with the projected `istio-token`.
+- **A liveness probe on `istio-proxy`** (`require-probes`): `/healthz/ready` on 15021, the
+  endpoint of Istio's own startup and readiness probes, every 15 seconds, restarting after 8
+  failures.
+- **Waypoints get their own ServiceAccount**, `<gateway>-waypoint`, through the Gateway's
+  `gateway.istio.io/service-account` annotation (`disallow-default-service-account`). Istio
+  names a waypoint's ServiceAccount after the Gateway, so the `default` waypoint ran as the
+  namespace's `default` ServiceAccount and its pods were refused. On upgrade the waypoint's
+  identity changes from `sa/default` to `sa/default-waypoint`; nothing in this chart or
+  `posture` refers to it.
+- The integration run enforces `disallow-default-service-account`,
+  `disallow-rbac-escalation-verbs`, `disallow-secrets-in-env`, and
+  `disallow-shared-process-namespace` as well, and checks the gateway pods for the two fixes
+  above (enforced once the run pins `posture` 0.3.0). Its workloads meet every default-on
+  policy.
+
 ## 0.1.0
 
 First release: security at the edge of the cluster for **Istio in ambient mode**. The chart
