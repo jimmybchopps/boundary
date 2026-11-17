@@ -4,7 +4,7 @@ Newest first, one `## X.Y.Z` section per release. A version's section stays mark
 `(unreleased)` until the release commit; the release workflow refuses a tag whose section
 still is, or whose version doesn't match `charts/boundary/Chart.yaml`.
 
-## 0.1.1 (unreleased)
+## 0.1.1
 
 The gateway and waypoint pods now pass the `policy` chart's two remaining default-on policies
 without a `posture` exception.
